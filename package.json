@@ -1,0 +1,28 @@
+{
+  "name": "pern-task1",
+  "version": "1.0.0",
+  "description": "A full-stack admin dashboard built with PostgreSQL, Express, React, and Node.js",
+  "scripts": {
+    "install-all": "cd backend && npm install && cd ../frontend && npm install",
+    "start-backend": "cd backend && npm start",
+    "start-frontend": "cd frontend && npm start",
+    "dev-backend": "cd backend && npm run dev",
+    "build-frontend": "cd frontend && npm run build"
+  },
+  "keywords": [
+    "pern",
+    "postgresql",
+    "express",
+    "react",
+    "nodejs",
+    "dashboard",
+    "crud",
+    "fullstack"
+  ],
+  "author": "ribnuu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ribnuu/PERN-Task1.git"
+  }
+}

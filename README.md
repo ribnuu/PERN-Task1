@@ -261,6 +261,7 @@ PERN-Task1/
 │   ├── db.js              # Database connection
 │   ├── index.js           # Express server and API routes
 │   ├── schema.sql         # Database schema
+│   ├── Dockerfile         # Docker configuration for backend
 │   └── package.json
 ├── frontend/
 │   ├── node_modules/
@@ -270,14 +271,26 @@ PERN-Task1/
 │   │   ├── App.css        # Styles
 │   │   └── index.js       # React entry point
 │   ├── .env
+│   ├── Dockerfile         # Docker configuration for frontend
 │   └── package.json
-└── README.md
+├── docker-compose.yml     # Docker Compose configuration
+├── setup.sh               # Automated setup script
+├── API_REFERENCE.md       # Detailed API documentation
+├── CONTRIBUTING.md        # Contribution guidelines
+├── LICENSE                # MIT License
+├── package.json           # Root package.json for convenience scripts
+└── README.md              # This file
 ```
+
+## Documentation
+
+- [API Reference](API_REFERENCE.md) - Detailed API endpoint documentation
+- [Contributing Guidelines](CONTRIBUTING.md) - How to contribute to this project
 
 ## Contributing
 
-Feel free to submit issues and enhancement requests!
+We welcome contributions! Please read our [Contributing Guidelines](CONTRIBUTING.md) before submitting pull requests.
 
 ## License
 
-This project is open source and available under the MIT License.
+This project is open source and available under the [MIT License](LICENSE).
