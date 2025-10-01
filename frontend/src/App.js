@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
 import axios from 'axios';
 
@@ -15,11 +15,43 @@ function App() {
   const [personalList, setPersonalList] = useState([]);
   const [message, setMessage] = useState({ type: '', text: '' });
 
+  const showMessage = (type, text) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+  };
+
+  const fetchData = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_URL}/${activeSection}`);
+      setData(response.data);
+    } catch (error) {
+      showMessage('error', 'Failed to fetch data');
+    }
+  }, [activeSection]);
+
+  const fetchPersonalList = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_URL}/personal`);
+      setPersonalList(response.data);
+    } catch (error) {
+      console.error('Failed to fetch personal list');
+    }
+  }, []);
+
+  const handleSearch = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_URL}/search?q=${searchTerm}`);
+      setSearchResults(response.data);
+    } catch (error) {
+      console.error('Search failed');
+    }
+  }, [searchTerm]);
+
   // Fetch data based on active section
   useEffect(() => {
     fetchData();
     fetchPersonalList();
-  }, [activeSection]);
+  }, [fetchData, fetchPersonalList]);
 
   // Debounce search
   useEffect(() => {
@@ -31,39 +63,7 @@ function App() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchTerm]);
-
-  const fetchData = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/${activeSection}`);
-      setData(response.data);
-    } catch (error) {
-      showMessage('error', 'Failed to fetch data');
-    }
-  };
-
-  const fetchPersonalList = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/personal`);
-      setPersonalList(response.data);
-    } catch (error) {
-      console.error('Failed to fetch personal list');
-    }
-  };
-
-  const handleSearch = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/search?q=${searchTerm}`);
-      setSearchResults(response.data);
-    } catch (error) {
-      console.error('Search failed');
-    }
-  };
-
-  const showMessage = (type, text) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage({ type: '', text: '' }), 3000);
-  };
+  }, [searchTerm, handleSearch]);
 
   const handleAdd = () => {
     setShowForm(true);

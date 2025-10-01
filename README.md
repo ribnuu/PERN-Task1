@@ -2,6 +2,8 @@
 
 A full-stack admin dashboard built with **PostgreSQL**, **Express**, **React**, and **Node.js** (PERN Stack).
 
+![PERN Dashboard](https://github.com/user-attachments/assets/0f90a749-efb4-42bf-a42c-c29c044620c3)
+
 ## Features
 
 - **3-Panel Layout Design**:
@@ -35,8 +37,32 @@ Before running this application, make sure you have the following installed:
 - Node.js (v14 or higher)
 - PostgreSQL (v12 or higher)
 - npm or yarn
+- Docker and Docker Compose (optional, for containerized setup)
 
 ## Installation & Setup
+
+### Quick Setup with Script (Linux/Mac)
+
+```bash
+git clone https://github.com/ribnuu/PERN-Task1.git
+cd PERN-Task1
+chmod +x setup.sh
+./setup.sh
+```
+
+### Quick Setup with Docker Compose
+
+```bash
+git clone https://github.com/ribnuu/PERN-Task1.git
+cd PERN-Task1
+docker-compose up
+```
+
+The application will be available at:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:5000/api
+
+### Manual Setup
 
 ### 1. Clone the Repository
 
