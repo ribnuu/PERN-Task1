@@ -15,7 +15,83 @@ let mockPeople = [
     personal: { id: 1, first_name: 'John', last_name: 'Doe', nic: '199012345678', address: '123 Main St' },
     bank: { account_number: '1001234567', bank_name: 'Test Bank', branch: 'Main Branch', balance: 50000 },
     family: [
-      { relation: 'Spouse', first_name: 'Jane', last_name: 'Doe', nic: '199112345678' }
+      { 
+        relation: 'Wife', 
+        custom_relation: '', 
+        first_name: 'Jane', 
+        last_name: 'Doe', 
+        age: 28, 
+        nic: '199112345678', 
+        phone_number: '+1-555-0123' 
+      },
+      { 
+        relation: 'Son', 
+        custom_relation: '', 
+        first_name: 'Tommy', 
+        last_name: 'Doe', 
+        age: 8, 
+        nic: '', 
+        phone_number: '' 
+      },
+      { 
+        relation: 'Friend', 
+        custom_relation: '', 
+        first_name: 'Mike', 
+        last_name: 'Johnson', 
+        age: 32, 
+        nic: '198812345678', 
+        phone_number: '+1-555-0456' 
+      }
+    ],
+    vehicles: [
+      {
+        vehicle_number: 'CAG4455',
+        make: 'TOYOTA',
+        model: 'PRADO 150'
+      },
+      {
+        vehicle_number: 'ABC1234',
+        make: 'HONDA',
+        model: 'CIVIC'
+      }
+    ],
+    bodyMarks: [
+      {
+        type: 'Tattoo',
+        location: 'behind the right ear',
+        description: 'text says "gang"',
+        picture: ''
+      }
+    ],
+    usedDevices: [
+      {
+        device_type: 'Phone',
+        make: 'Samsung',
+        model: 'Galaxy S21',
+        serial_number: 'SN123456789',
+        imei_number: '354123456789012'
+      },
+      {
+        device_type: 'Laptop',
+        make: 'Apple',
+        model: 'MacBook Pro',
+        serial_number: 'MB987654321',
+        imei_number: ''
+      }
+    ],
+    callHistory: [
+      {
+        device: 'Phone - Samsung Galaxy S21',
+        call_type: 'Outgoing',
+        number: '+1-555-9876',
+        date_time: '2024-10-19T14:30:00'
+      },
+      {
+        device: 'Phone - Samsung Galaxy S21',
+        call_type: 'Incoming',
+        number: '+1-555-5555',
+        date_time: '2024-10-19T15:45:00'
+      }
     ]
   }
 ];
@@ -58,7 +134,7 @@ app.get('/api/person/:id', (req, res) => {
 });
 
 app.post('/api/person', (req, res) => {
-  const { personal, bank, family } = req.body;
+  const { personal, bank, family, vehicles, bodyMarks, usedDevices, callHistory } = req.body;
   const newPerson = {
     id: nextId++,
     personal: { 
@@ -74,7 +150,39 @@ app.post('/api/person', (req, res) => {
       branch: bank.branch,
       balance: bank.balance || 0
     } : null,
-    family: family || []
+    family: (family || []).map(member => ({
+      relation: member.relation,
+      custom_relation: member.customRelation || '',
+      first_name: member.firstName,
+      last_name: member.lastName,
+      age: member.age || null,
+      nic: member.nic || '',
+      phone_number: member.phoneNumber || ''
+    })),
+    vehicles: (vehicles || []).map(vehicle => ({
+      vehicle_number: vehicle.vehicleNumber,
+      make: vehicle.make,
+      model: vehicle.model
+    })),
+    bodyMarks: (bodyMarks || []).map(mark => ({
+      type: mark.type,
+      location: mark.location,
+      description: mark.description,
+      picture: mark.picture
+    })),
+    usedDevices: (usedDevices || []).map(device => ({
+      device_type: device.deviceType,
+      make: device.make,
+      model: device.model,
+      serial_number: device.serialNumber,
+      imei_number: device.imeiNumber
+    })),
+    callHistory: (callHistory || []).map(call => ({
+      device: call.device,
+      call_type: call.callType,
+      number: call.number,
+      date_time: call.dateTime
+    }))
   };
   
   mockPeople.push(newPerson);
@@ -87,7 +195,7 @@ app.put('/api/person/:id', (req, res) => {
     return res.status(404).json({ error: 'Person not found' });
   }
   
-  const { personal, bank, family } = req.body;
+  const { personal, bank, family, vehicles, bodyMarks, usedDevices, callHistory } = req.body;
   mockPeople[personIndex] = {
     id: parseInt(req.params.id),
     personal: { 
@@ -103,7 +211,39 @@ app.put('/api/person/:id', (req, res) => {
       branch: bank.branch,
       balance: bank.balance || 0
     } : null,
-    family: family || []
+    family: (family || []).map(member => ({
+      relation: member.relation,
+      custom_relation: member.customRelation || '',
+      first_name: member.firstName,
+      last_name: member.lastName,
+      age: member.age || null,
+      nic: member.nic || '',
+      phone_number: member.phoneNumber || ''
+    })),
+    vehicles: (vehicles || []).map(vehicle => ({
+      vehicle_number: vehicle.vehicleNumber,
+      make: vehicle.make,
+      model: vehicle.model
+    })),
+    bodyMarks: (bodyMarks || []).map(mark => ({
+      type: mark.type,
+      location: mark.location,
+      description: mark.description,
+      picture: mark.picture
+    })),
+    usedDevices: (usedDevices || []).map(device => ({
+      device_type: device.deviceType,
+      make: device.make,
+      model: device.model,
+      serial_number: device.serialNumber,
+      imei_number: device.imeiNumber
+    })),
+    callHistory: (callHistory || []).map(call => ({
+      device: call.device,
+      call_type: call.callType,
+      number: call.number,
+      date_time: call.dateTime
+    }))
   };
   
   res.json({ message: 'Person updated successfully' });

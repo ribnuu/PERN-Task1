@@ -29,14 +29,17 @@ CREATE TABLE bank_accounts (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Family members table
+-- 3. Family members and friends table
 CREATE TABLE family_members (
   id SERIAL PRIMARY KEY,
   person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,
   relation VARCHAR(50) NOT NULL,
+  custom_relation VARCHAR(100),  -- For "Other" relationships
   first_name VARCHAR(100) NOT NULL,
-  last_name VARCHAR(100) NOT NULL,
+  last_name VARCHAR(100),
+  age INTEGER CHECK (age >= 0 AND age <= 150),
   nic VARCHAR(20),
+  phone_number VARCHAR(20),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -76,8 +79,11 @@ INSERT INTO bank_accounts (person_id, account_number, bank_name, branch, balance
 (2, '2001234567', 'Peoples Bank', 'Kandy', 75000.00),
 (3, '3001234567', 'Bank of Ceylon', 'Galle', 25000.00);
 
-INSERT INTO family_members (person_id, relation, first_name, last_name, nic) VALUES
-(1, 'Spouse', 'Mary', 'Doe', '199112345679'),
-(1, 'Child', 'Tommy', 'Doe', '202112345680'),
-(2, 'Parent', 'Robert', 'Smith', '196012345678'),
-(3, 'Sibling', 'Sarah', 'Johnson', '199512345678');
+INSERT INTO family_members (person_id, relation, custom_relation, first_name, last_name, age, nic, phone_number) VALUES
+(1, 'Wife', NULL, 'Mary', 'Doe', 28, '199112345679', '+1-555-0123'),
+(1, 'Son', NULL, 'Tommy', 'Doe', 8, '202112345680', NULL),
+(1, 'Friend', NULL, 'Mike', 'Johnson', 32, '198812345678', '+1-555-0456'),
+(2, 'Mother', NULL, 'Robert', 'Smith', 65, '196012345678', '+1-555-0789'),
+(2, 'Other', 'Business Partner', 'Alex', 'Brown', 45, '197512345678', '+1-555-0321'),
+(3, 'Sister', NULL, 'Sarah', 'Johnson', 29, '199512345678', '+1-555-0654'),
+(3, 'Friend', NULL, 'Lisa', 'Wilson', 31, NULL, '+1-555-0987');
