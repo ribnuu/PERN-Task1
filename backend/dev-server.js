@@ -98,7 +98,33 @@ let mockPeople = [
         number: '+15559999',
         date_time: '2024-10-19T16:20:00'
       }
-    ]
+    ],
+    weapons: [
+      {
+        id: 1,
+        manufacturer: 'Smith & Wesson',
+        model: 'Model 686',
+        caliber_marking: '.357 MAG',
+        country_origin: 'United States',
+        serial_number: 'SW123456789'
+      },
+      {
+        id: 2,
+        manufacturer: 'Glock',
+        model: 'Glock 17',
+        caliber_marking: '9mm LUGER',
+        country_origin: 'Austria',
+        serial_number: 'GL987654321'
+      }
+    ],
+    secondPhone: {
+      whatsapp: '+15550100',
+      telegram: '+15550101',
+      viber: '+15550102',
+      other: '+15550103',
+      mobile: '+15550104',
+      landline: '0115550105'
+    }
   }
 ];
 

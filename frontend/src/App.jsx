@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5001/api';
+const API_URL = 'http://localhost:5000/api';
 
 export default function App() {
   const [activeSection, setActiveSection] = useState('personal');
@@ -16,7 +16,9 @@ export default function App() {
     vehicles: [],
     bodyMarks: [],
     usedDevices: [],
-    callHistory: []
+    callHistory: [],
+    weapons: [],
+    phone: { type: 'WhatsApp', number: '', customType: '' }
   });
 
   // Family relationship options
@@ -131,7 +133,23 @@ export default function App() {
           callType: c.call_type || '',
           number: c.number || '',
           dateTime: c.date_time || ''
-        })) : []
+        })) : [],
+        weapons: data.weapons ? data.weapons.map(w => ({
+          manufacturer: w.manufacturer || '',
+          model: w.model || '',
+          caliber_marking: w.caliber_marking || '',
+          country_origin: w.country_origin || '',
+          serial_number: w.serial_number || ''
+        })) : [],
+        phone: data.secondPhone ? {
+          type: 'WhatsApp', // default type
+          number: data.secondPhone.whatsapp || data.secondPhone.telegram || data.secondPhone.viber || data.secondPhone.mobile || data.secondPhone.landline || data.secondPhone.other || '',
+          customType: ''
+        } : {
+          type: 'WhatsApp',
+          number: '',
+          customType: ''
+        }
       });
       setIsEditing(false);
     } catch (error) {
@@ -150,7 +168,9 @@ export default function App() {
       vehicles: [],
       bodyMarks: [],
       usedDevices: [],
-      callHistory: []
+      callHistory: [],
+      weapons: [],
+      phone: { type: 'WhatsApp', number: '', customType: '' }
     });
     setIsEditing(true);
     setSearchResults([]);
@@ -163,26 +183,54 @@ export default function App() {
     }
 
     try {
-      await axios.put(`${API_URL}/person/${selectedPerson}`, formData);
+      // Transform phone data back to second_phone format for backend compatibility
+      const updateData = {
+        ...formData,
+        secondPhone: {
+          whatsapp: formData.phone.type === 'WhatsApp' ? formData.phone.number : '',
+          telegram: formData.phone.type === 'Telegram' ? formData.phone.number : '',
+          viber: formData.phone.type === 'Viber' ? formData.phone.number : '',
+          mobile: formData.phone.type === 'Mobile' ? formData.phone.number : '',
+          landline: formData.phone.type === 'Landline' ? formData.phone.number : '',
+          other: formData.phone.type === 'Other' ? (formData.phone.customType ? `${formData.phone.customType}: ${formData.phone.number}` : formData.phone.number) : ''
+        }
+      };
+      delete updateData.phone; // Remove the phone field since backend expects secondPhone
+
+      await axios.put(`${API_URL}/person/${selectedPerson}`, updateData);
       alert('Updated successfully');
       setIsEditing(false);
     } catch (error) {
       console.error('Update error:', error);
-      const message = error.response?.data?.message || error.response?.data?.error || 'Failed to update';
+      const message = error.response?.data?.message || error.response?.data?.error || 'Failed to update person';
       alert(message);
     }
   };
 
   const handleCreate = async () => {
     try {
-      const response = await axios.post(`${API_URL}/person`, formData);
+      // Transform phone data back to second_phone format for backend compatibility
+      const createData = {
+        ...formData,
+        secondPhone: {
+          whatsapp: formData.phone.type === 'WhatsApp' ? formData.phone.number : '',
+          telegram: formData.phone.type === 'Telegram' ? formData.phone.number : '',
+          viber: formData.phone.type === 'Viber' ? formData.phone.number : '',
+          mobile: formData.phone.type === 'Mobile' ? formData.phone.number : '',
+          landline: formData.phone.type === 'Landline' ? formData.phone.number : '',
+          other: formData.phone.type === 'Other' ? (formData.phone.customType ? `${formData.phone.customType}: ${formData.phone.number}` : formData.phone.number) : ''
+        }
+      };
+      delete createData.phone; // Remove the phone field since backend expects secondPhone
+
+      const response = await axios.post(`${API_URL}/person`, createData);
       alert('Created successfully');
       setSelectedPerson(response.data.id);
       setIsEditing(false);
       loadPerson(response.data.id);
     } catch (error) {
       console.error('Create error:', error);
-      const message = error.response?.data?.message || error.response?.data?.error || 'Failed to create';
+      const message = error.response?.data?.message || error.response?.data?.error || 'Failed to create person';
       alert(message);
     }
   };
@@ -354,6 +402,56 @@ export default function App() {
     }));
   };
 
+  // Used Weapons functions
+  const addWeapon = () => {
+    setFormData(prev => ({
+      ...prev,
+      weapons: [...prev.weapons, {
+        manufacturer: '',
+        model: '',
+        caliber_marking: '',
+        country_origin: '',
+        serial_number: ''
+      }]
+    }));
+  };
+
+  const updateWeapon = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      weapons: prev.weapons.map((weapon, i) => 
+        i === index ? { ...weapon, [field]: value } : weapon
+      )
+    }));
+  };
+
+  const removeWeapon = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      weapons: prev.weapons.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Phone functions
+  const updatePhone = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      phone: { ...prev.phone, [field]: value }
+    }));
+  };
+
+  // Image upload handler for body marks
+  const handleImageUpload = (index, event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        updateBodyMark(index, 'picture', e.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', height: '100vh', fontFamily: 'Arial, sans-serif' }}>
       {/* LEFT PANEL */}
@@ -474,6 +572,34 @@ export default function App() {
           >
             Call History
           </button>
+          <button
+            onClick={() => setActiveSection('weapons')}
+            style={{
+              padding: '12px',
+              backgroundColor: activeSection === 'weapons' ? '#34495e' : 'transparent',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              textAlign: 'left'
+            }}
+          >
+            Used Weapons
+          </button>
+          <button
+            onClick={() => setActiveSection('phone')}
+            style={{
+              padding: '12px',
+              backgroundColor: activeSection === 'phone' ? '#34495e' : 'transparent',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              textAlign: 'left'
+            }}
+          >
+            Phone
+          </button>
         </div>
       </div>
 
@@ -488,7 +614,9 @@ export default function App() {
             {activeSection === 'bodyMarks' && 'BODY MARKS Details'}
             {activeSection === 'usedDevices' && 'USED DEVICES Details'}
             {activeSection === 'callHistory' && 'CALL HISTORY Details'}
-            {!['personal', 'bank', 'family', 'vehicles', 'bodyMarks', 'usedDevices', 'callHistory'].includes(activeSection) && 'Select a section from the left panel'}
+            {activeSection === 'weapons' && 'USED WEAPONS Details'}
+            {activeSection === 'phone' && 'PHONE Details'}
+            {!['personal', 'bank', 'family', 'vehicles', 'bodyMarks', 'usedDevices', 'callHistory', 'weapons', 'phone'].includes(activeSection) && 'Select a section from the left panel'}
           </h2>
 
           {activeSection === 'personal' && (
@@ -1039,31 +1167,40 @@ export default function App() {
                       />
                     </div>
 
-                    <div>
+                    <div style={{ gridColumn: '1 / -1' }}>
                       <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
-                        Picture
+                        Picture Upload
                       </label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onload = (event) => {
-                              updateBodyMark(index, 'picture', event.target.result);
-                            };
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '10px',
-                          border: '1px solid #ddd',
-                          borderRadius: '5px',
-                          fontSize: '14px'
-                        }}
-                      />
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleImageUpload(index, e)}
+                          style={{
+                            flex: 1,
+                            padding: '10px',
+                            border: '1px solid #ddd',
+                            borderRadius: '5px',
+                            fontSize: '14px'
+                          }}
+                        />
+                        {mark.picture && (
+                          <button
+                            onClick={() => updateBodyMark(index, 'picture', '')}
+                            style={{
+                              padding: '8px 12px',
+                              backgroundColor: '#e74c3c',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '5px',
+                              cursor: 'pointer',
+                              fontSize: '12px'
+                            }}
+                          >
+                            Remove Picture
+                          </button>
+                        )}
+                      </div>
                       {mark.picture && (
                         <div style={{ marginTop: '10px' }}>
                           <img 
@@ -1430,7 +1567,253 @@ export default function App() {
             </div>
           )}
 
-          {!['personal', 'bank', 'family', 'vehicles', 'bodyMarks', 'usedDevices', 'callHistory'].includes(activeSection) && (
+          {activeSection === 'weapons' && (
+            <div>
+              <button
+                onClick={addWeapon}
+                style={{
+                  padding: '12px 24px',
+                  marginBottom: '20px',
+                  backgroundColor: '#3498db',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 'bold'
+                }}
+              >
+                + Add Weapon
+              </button>
+
+              {formData.weapons.map((weapon, index) => (
+                <div key={index} style={{
+                  marginBottom: '25px',
+                  padding: '20px',
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '8px',
+                  border: '1px solid #e9ecef'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <h4 style={{ margin: 0, color: '#2c3e50' }}>
+                      {weapon.manufacturer ? `${weapon.manufacturer} ${weapon.model}` : `Weapon ${index + 1}`}
+                    </h4>
+                    <button
+                      onClick={() => removeWeapon(index)}
+                      style={{
+                        padding: '8px 12px',
+                        backgroundColor: '#e74c3c',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Manufacturer Name *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Enter manufacturer name"
+                        value={weapon.manufacturer}
+                        onChange={(e) => updateWeapon(index, 'manufacturer', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Model *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Enter model"
+                        value={weapon.model}
+                        onChange={(e) => updateWeapon(index, 'model', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Caliber Marking *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Enter caliber marking"
+                        value={weapon.caliber_marking}
+                        onChange={(e) => updateWeapon(index, 'caliber_marking', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Country of Origin *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Enter country of origin"
+                        value={weapon.country_origin}
+                        onChange={(e) => updateWeapon(index, 'country_origin', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Serial Number *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Enter serial number"
+                        value={weapon.serial_number}
+                        onChange={(e) => updateWeapon(index, 'serial_number', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {formData.weapons.length === 0 && (
+                <div style={{
+                  padding: '40px',
+                  textAlign: 'center',
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '8px',
+                  border: '2px dashed #dee2e6',
+                  color: '#6c757d'
+                }}>
+                  <h4 style={{ margin: '0 0 10px 0' }}>No Weapons Added</h4>
+                  <p style={{ margin: 0 }}>Click "Add Weapon" to start recording weapon information</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeSection === 'phone' && (
+            <div>
+              <div style={{
+                padding: '20px',
+                backgroundColor: '#f8f9fa',
+                borderRadius: '8px',
+                border: '1px solid #e9ecef'
+              }}>
+                <h4 style={{ margin: '0 0 15px 0', color: '#2c3e50' }}>Phone Number</h4>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '15px', alignItems: 'end' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                      Type
+                    </label>
+                    <select
+                      value={formData.phone.type}
+                      onChange={(e) => updatePhone('type', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        border: '1px solid #ddd',
+                        borderRadius: '5px',
+                        fontSize: '14px'
+                      }}
+                    >
+                      <option value="WhatsApp">WhatsApp</option>
+                      <option value="Telegram">Telegram</option>
+                      <option value="Viber">Viber</option>
+                      <option value="Mobile">Mobile</option>
+                      <option value="Landline">Landline</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+
+                  {formData.phone.type === 'Other' && (
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Custom Type
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Enter custom type"
+                        value={formData.phone.customType}
+                        onChange={(e) => updatePhone('customType', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                      Phone Number
+                    </label>
+                    <input
+                      type="tel"
+                      placeholder="Enter phone number"
+                      value={formData.phone.number}
+                      onChange={(e) => updatePhone('number', validatePhoneNumber(e.target.value))}
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        border: '1px solid #ddd',
+                        borderRadius: '5px',
+                        fontSize: '14px'
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!['personal', 'bank', 'family', 'vehicles', 'bodyMarks', 'usedDevices', 'callHistory', 'weapons', 'secondPhone'].includes(activeSection) && (
             <div style={{
               padding: '60px 40px',
               textAlign: 'center',
@@ -1471,6 +1854,14 @@ export default function App() {
                 <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
                   <h4 style={{ margin: '0 0 10px 0', color: '#e67e22' }}>Call History</h4>
                   <p style={{ margin: 0, fontSize: '14px' }}>Communication records</p>
+                </div>
+                <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: '#c0392b' }}>Used Weapons</h4>
+                  <p style={{ margin: 0, fontSize: '14px' }}>Weapon details and registration</p>
+                </div>
+                <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: '#8e44ad' }}>Phone</h4>
+                  <p style={{ margin: 0, fontSize: '14px' }}>Communication platform details</p>
                 </div>
               </div>
             </div>
