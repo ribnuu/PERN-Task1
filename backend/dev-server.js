@@ -22,7 +22,7 @@ let mockPeople = [
         last_name: 'Doe', 
         age: 28, 
         nic: '199112345678', 
-        phone_number: '+1-555-0123' 
+        phone_number: '+15550123' 
       },
       { 
         relation: 'Son', 
@@ -40,7 +40,7 @@ let mockPeople = [
         last_name: 'Johnson', 
         age: 32, 
         nic: '198812345678', 
-        phone_number: '+1-555-0456' 
+        phone_number: '+15550456' 
       }
     ],
     vehicles: [
@@ -83,14 +83,20 @@ let mockPeople = [
       {
         device: 'Phone - Samsung Galaxy S21',
         call_type: 'Outgoing',
-        number: '+1-555-9876',
+        number: '+15550123',
         date_time: '2024-10-19T14:30:00'
       },
       {
         device: 'Phone - Samsung Galaxy S21',
         call_type: 'Incoming',
-        number: '+1-555-5555',
+        number: '+15550456',
         date_time: '2024-10-19T15:45:00'
+      },
+      {
+        device: 'Phone - Samsung Galaxy S21',
+        call_type: 'Missed Call',
+        number: '+15559999',
+        date_time: '2024-10-19T16:20:00'
       }
     ]
   }

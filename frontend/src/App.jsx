@@ -35,6 +35,39 @@ export default function App() {
   // Body mark type options
   const bodyMarkTypes = ['Tattoo', 'Scar', 'Birthmark', 'Piercing', 'Other'];
 
+  // Phone number validation function
+  const validatePhoneNumber = (value) => {
+    // Remove spaces and hyphens from input
+    return value.replace(/[\s-]/g, '');
+  };
+
+  // Function to find contact name by phone number
+  const getContactNameByPhone = (phoneNumber) => {
+    // Search through current form data family members
+    if (formData.family) {
+      const contact = formData.family.find(member => 
+        member.phoneNumber === phoneNumber
+      );
+      if (contact) {
+        return `${contact.firstName} ${contact.lastName}`.trim();
+      }
+    }
+    
+    // Search through search results (if available)
+    for (const person of searchResults) {
+      // Note: In a real implementation, we'd need to load full person data
+      // For now, we'll only check current form data
+    }
+    
+    return null;
+  };
+
+  // Function to display call with contact name or phone number
+  const getCallDisplayText = (call) => {
+    const contactName = getContactNameByPhone(call.number);
+    return contactName ? `Call: ${contactName}` : `Call: ${call.number}`;
+  };
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     try {
@@ -728,12 +761,16 @@ export default function App() {
                     <div>
                       <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
                         Phone Number
+                        <span style={{ fontSize: '12px', color: '#666', fontWeight: 'normal' }}> (spaces and hyphens will be removed automatically)</span>
                       </label>
                       <input
                         type="tel"
-                        placeholder="Enter phone number"
+                        placeholder="Enter phone number (no spaces or hyphens)"
                         value={member.phoneNumber}
-                        onChange={(e) => updateFamilyMember(index, 'phoneNumber', e.target.value)}
+                        onChange={(e) => {
+                          const cleanedNumber = validatePhoneNumber(e.target.value);
+                          updateFamilyMember(index, 'phoneNumber', cleanedNumber);
+                        }}
                         style={{ 
                           width: '100%', 
                           padding: '10px', 
@@ -1259,7 +1296,7 @@ export default function App() {
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                     <h4 style={{ margin: 0, color: '#2c3e50' }}>
-                      {call.number ? `Call: ${call.number}` : `Call Record ${index + 1}`}
+                      {call.number ? getCallDisplayText(call) : `Call Record ${index + 1}`}
                     </h4>
                     <button
                       onClick={() => removeCallHistory(index)}
@@ -1334,12 +1371,16 @@ export default function App() {
                     <div>
                       <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
                         Phone Number *
+                        <span style={{ fontSize: '12px', color: '#666', fontWeight: 'normal' }}> (spaces and hyphens will be removed automatically)</span>
                       </label>
                       <input
                         type="tel"
-                        placeholder="Enter phone number"
+                        placeholder="Enter phone number (no spaces or hyphens)"
                         value={call.number}
-                        onChange={(e) => updateCallHistory(index, 'number', e.target.value)}
+                        onChange={(e) => {
+                          const cleanedNumber = validatePhoneNumber(e.target.value);
+                          updateCallHistory(index, 'number', cleanedNumber);
+                        }}
                         style={{
                           width: '100%',
                           padding: '10px',
