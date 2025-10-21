@@ -15,8 +15,9 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/Properties', express.static(path.join(__dirname, 'Properties')));
 
-// Configure multer for file uploads
+// Configure multer for body marks file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadPath = path.join(__dirname, 'uploads', 'body_marks');
@@ -28,6 +29,22 @@ const storage = multer.diskStorage({
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, 'bodymark-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+// Configure multer for properties documents
+const propertiesStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadPath = path.join(__dirname, 'Properties');
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const personId = req.params.id || req.body.personId || 'unknown';
+    cb(null, `property-${personId}-${uniqueSuffix}${path.extname(file.originalname)}`);
   }
 });
 
@@ -45,6 +62,24 @@ const upload = multer({
       return cb(null, true);
     } else {
       cb(new Error('Only image files are allowed!'));
+    }
+  }
+});
+
+const uploadProperties = multer({ 
+  storage: propertiesStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit for documents
+  },
+  fileFilter: function (req, file, cb) {
+    const allowedTypes = /pdf|doc|docx|jpeg|jpg|png|gif|txt|rtf/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = /application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document)|image\/(jpeg|jpg|png|gif)|text\/(plain|rtf)/.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only document and image files are allowed!'));
     }
   }
 });
@@ -145,6 +180,13 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
       [id]
     );
 
+    // Get properties
+    const propertiesResult = await pool.query(
+      'SELECT * FROM properties WHERE person_id = $1 ORDER BY created_at DESC',
+      [id]
+    );
+    console.log('Properties query result for person', id, ':', propertiesResult.rows.length, 'properties found');
+
     // Format response to match frontend expectations
     const response = {
       id: personResult.rows[0].id,
@@ -216,7 +258,21 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         other: '',
         mobile: '',
         landline: ''
-      }
+      },
+      properties: propertiesResult.rows.map(property => ({
+        id: property.id,
+        property_type: property.property_type,
+        status: property.status,
+        description: property.description,
+        value: parseFloat(property.value),
+        purchase_date: property.purchase_date,
+        sale_date: property.sale_date,
+        location: property.location,
+        documents: property.documents,
+        buyer_name: property.buyer_name,
+        buyer_nic: property.buyer_nic,
+        buyer_passport: property.buyer_passport
+      }))
     };
     
     res.json(response);
@@ -231,7 +287,7 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
   const client = await pool.connect();
   
   try {
-    const { personal, bank, family, vehicles, bodyMarks, usedDevices, callHistory, weapons, secondPhone } = req.body;
+    const { personal, bank, family, vehicles, bodyMarks, usedDevices, callHistory, weapons, secondPhone, properties } = req.body;
     
     await client.query('BEGIN');
     
@@ -327,6 +383,30 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
         [personId, secondPhone.whatsapp || null, secondPhone.telegram || null, secondPhone.viber || null, secondPhone.other || null, secondPhone.mobile || null, secondPhone.landline || null]
       );
     }
+
+    // Insert properties if provided
+    if (properties && properties.length > 0) {
+      for (const property of properties) {
+        await client.query(
+          `INSERT INTO properties (person_id, property_type, status, description, value, purchase_date, sale_date, location, documents, buyer_name, buyer_nic, buyer_passport)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            personId, 
+            property.propertyType, 
+            property.status, 
+            property.description || null, 
+            property.value || 0, 
+            property.purchaseDate || null, 
+            property.saleDate || null, 
+            property.location || null, 
+            property.documents || null, 
+            property.buyerName || null, 
+            property.buyerNIC || null, 
+            property.buyerPassport || null
+          ]
+        );
+      }
+    }
     
     await client.query('COMMIT');
     res.json({ id: personId, message: 'Person created successfully' });
@@ -350,7 +430,10 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
   
   try {
     const { id } = req.params;
-    const { personal, bank, family, vehicles, bodyMarks, usedDevices, callHistory, weapons, secondPhone } = req.body;
+    const { personal, bank, family, vehicles, bodyMarks, usedDevices, callHistory, weapons, secondPhone, properties } = req.body;
+    
+    console.log('UPDATE request for person ID:', id);
+    console.log('Properties data received:', properties);
     
     await client.query('BEGIN');
     
@@ -396,6 +479,7 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     await client.query('DELETE FROM call_history WHERE person_id = $1', [id]);
     await client.query('DELETE FROM used_weapons WHERE person_id = $1', [id]);
     await client.query('DELETE FROM second_phone WHERE person_id = $1', [id]);
+    await client.query('DELETE FROM properties WHERE person_id = $1', [id]);
     
     // Re-insert all data
     if (family && family.length > 0) {
@@ -466,6 +550,34 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [id, secondPhone.whatsapp || null, secondPhone.telegram || null, secondPhone.viber || null, secondPhone.other || null, secondPhone.mobile || null, secondPhone.landline || null]
       );
+    }
+
+    // Insert properties if provided
+    if (properties && properties.length > 0) {
+      console.log('Inserting', properties.length, 'properties for person', id);
+      for (const property of properties) {
+        console.log('Inserting property:', property);
+        await client.query(
+          `INSERT INTO properties (person_id, property_type, status, description, value, purchase_date, sale_date, location, documents, buyer_name, buyer_nic, buyer_passport)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            id, 
+            property.propertyType, 
+            property.status, 
+            property.description || null, 
+            property.value || 0, 
+            property.purchaseDate || null, 
+            property.saleDate || null, 
+            property.location || null, 
+            property.documents || null, 
+            property.buyerName || null, 
+            property.buyerNIC || null, 
+            property.buyerPassport || null
+          ]
+        );
+      }
+    } else {
+      console.log('No properties to insert for person', id);
     }
     
     await client.query('COMMIT');
@@ -683,6 +795,56 @@ app.put('/api/body-marks/:markId', upload.single('image'), async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update body mark' });
+  }
+});
+
+// ============================================
+// PROPERTIES DOCUMENT UPLOAD API ROUTES
+// ============================================
+
+// POST upload property document
+app.post('/api/person/:id/properties/upload', uploadProperties.single('document'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { section, propertyIndex } = req.body;
+    
+    console.log('Property document upload request:', { id, section, propertyIndex, file: req.file ? req.file.filename : 'No file' });
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    const documentPath = `/Properties/${req.file.filename}`;
+    
+    console.log('Document uploaded successfully:', req.file.filename);
+    
+    res.json({ 
+      message: 'Document uploaded successfully',
+      filename: req.file.filename,
+      path: documentPath,
+      section,
+      propertyIndex
+    });
+  } catch (err) {
+    console.error('Property document upload error:', err);
+    res.status(500).json({ error: 'Failed to upload property document', details: err.message });
+  }
+});
+
+// GET serve property documents
+app.get('/api/properties/documents/:filename', (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(__dirname, 'Properties', filename);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    res.sendFile(filePath);
+  } catch (err) {
+    console.error('Property document serve error:', err);
+    res.status(500).json({ error: 'Failed to serve property document' });
   }
 });
 

@@ -5,6 +5,7 @@ const API_URL = 'http://localhost:5000/api';
 
 export default function App() {
   const [activeSection, setActiveSection] = useState('personal');
+  const [activePropertiesTab, setActivePropertiesTab] = useState('currentlyInPossession');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [selectedPerson, setSelectedPerson] = useState(null);
@@ -18,7 +19,12 @@ export default function App() {
     usedDevices: [],
     callHistory: [],
     weapons: [],
-    phone: { type: 'WhatsApp', number: '', customType: '' }
+    phones: [],
+    properties: {
+      currentlyInPossession: [],
+      sold: [],
+      intendedToBuy: []
+    }
   });
 
   // Family relationship options
@@ -84,8 +90,11 @@ export default function App() {
 
   const loadPerson = async (id) => {
     try {
+      console.log('Loading person with ID:', id);
       const response = await axios.get(`${API_URL}/person/${id}`);
       const data = response.data;
+      console.log('Received person data:', data);
+      console.log('Properties from API:', data.properties);
       
       setSelectedPerson(id);
       setFormData({
@@ -141,14 +150,55 @@ export default function App() {
           country_origin: w.country_origin || '',
           serial_number: w.serial_number || ''
         })) : [],
-        phone: data.secondPhone ? {
-          type: 'WhatsApp', // default type
-          number: data.secondPhone.whatsapp || data.secondPhone.telegram || data.secondPhone.viber || data.secondPhone.mobile || data.secondPhone.landline || data.secondPhone.other || '',
-          customType: ''
-        } : {
-          type: 'WhatsApp',
-          number: '',
-          customType: ''
+        phones: data.secondPhone ? [
+          ...(data.secondPhone.whatsapp ? [{ type: 'WhatsApp', number: data.secondPhone.whatsapp, customType: '' }] : []),
+          ...(data.secondPhone.telegram ? [{ type: 'Telegram', number: data.secondPhone.telegram, customType: '' }] : []),
+          ...(data.secondPhone.viber ? [{ type: 'Viber', number: data.secondPhone.viber, customType: '' }] : []),
+          ...(data.secondPhone.mobile ? [{ type: 'Mobile', number: data.secondPhone.mobile, customType: '' }] : []),
+          ...(data.secondPhone.landline ? [{ type: 'Landline', number: data.secondPhone.landline, customType: '' }] : []),
+          ...(data.secondPhone.other ? [{ type: 'Other', number: data.secondPhone.other.split(': ').pop(), customType: data.secondPhone.other.includes(': ') ? data.secondPhone.other.split(': ')[0] : '' }] : [])
+        ] : [],
+        properties: {
+          currentlyInPossession: data.properties ? data.properties.filter(p => p.status === 'currently_in_possession').map(p => ({
+            propertyType: p.property_type || '',
+            description: p.description || '',
+            value: p.value || 0,
+            purchaseDate: p.purchase_date ? p.purchase_date.split('T')[0] : '',
+            location: p.location || '',
+            documents: p.documents || '',
+            buyerName: p.buyer_name || '',
+            buyerNIC: p.buyer_nic || '',
+            buyerPassport: p.buyer_passport || '',
+            saleDate: p.sale_date ? p.sale_date.split('T')[0] : ''
+          })) : [],
+          sold: data.properties ? data.properties.filter(p => p.status === 'sold').map(p => ({
+            propertyType: p.property_type || '',
+            description: p.description || '',
+            value: p.value || 0,
+            purchaseDate: p.purchase_date ? p.purchase_date.split('T')[0] : '',
+            location: p.location || '',
+            documents: p.documents || '',
+            buyerName: p.buyer_name || '',
+            buyerNIC: p.buyer_nic || '',
+            buyerPassport: p.buyer_passport || '',
+            saleDate: p.sale_date ? p.sale_date.split('T')[0] : ''
+          })) : [],
+          intendedToBuy: (() => {
+            const intendedProps = data.properties ? data.properties.filter(p => p.status === 'intended_to_buy').map(p => ({
+              propertyType: p.property_type || '',
+              description: p.description || '',
+              value: p.value || 0,
+              purchaseDate: p.purchase_date ? p.purchase_date.split('T')[0] : '',
+              location: p.location || '',
+              documents: p.documents || '',
+              buyerName: p.buyer_name || '',
+              buyerNIC: p.buyer_nic || '',
+              buyerPassport: p.buyer_passport || '',
+              saleDate: p.sale_date ? p.sale_date.split('T')[0] : ''
+            })) : [];
+            console.log('Processed intendedToBuy properties:', intendedProps);
+            return intendedProps;
+          })()
         }
       });
       setIsEditing(false);
@@ -170,7 +220,12 @@ export default function App() {
       usedDevices: [],
       callHistory: [],
       weapons: [],
-      phone: { type: 'WhatsApp', number: '', customType: '' }
+      phones: [],
+      properties: {
+        currentlyInPossession: [],
+        sold: [],
+        intendedToBuy: []
+      }
     });
     setIsEditing(true);
     setSearchResults([]);
@@ -183,23 +238,48 @@ export default function App() {
     }
 
     try {
-      // Transform phone data back to second_phone format for backend compatibility
+      // Transform phones data back to second_phone format for backend compatibility
+      const secondPhone = {
+        whatsapp: '',
+        telegram: '',
+        viber: '',
+        mobile: '',
+        landline: '',
+        other: ''
+      };
+
+      formData.phones.forEach(phone => {
+        if (phone.type === 'WhatsApp' && phone.number) secondPhone.whatsapp = phone.number;
+        else if (phone.type === 'Telegram' && phone.number) secondPhone.telegram = phone.number;
+        else if (phone.type === 'Viber' && phone.number) secondPhone.viber = phone.number;
+        else if (phone.type === 'Mobile' && phone.number) secondPhone.mobile = phone.number;
+        else if (phone.type === 'Landline' && phone.number) secondPhone.landline = phone.number;
+        else if (phone.type === 'Other' && phone.number) {
+          secondPhone.other = phone.customType ? `${phone.customType}: ${phone.number}` : phone.number;
+        }
+      });
+
+      // Transform properties data for backend
+      const allProperties = [
+        ...formData.properties.currentlyInPossession.map(p => ({ ...p, status: 'currently_in_possession' })),
+        ...formData.properties.sold.map(p => ({ ...p, status: 'sold' })),
+        ...formData.properties.intendedToBuy.map(p => ({ ...p, status: 'intended_to_buy' }))
+      ];
+
       const updateData = {
         ...formData,
-        secondPhone: {
-          whatsapp: formData.phone.type === 'WhatsApp' ? formData.phone.number : '',
-          telegram: formData.phone.type === 'Telegram' ? formData.phone.number : '',
-          viber: formData.phone.type === 'Viber' ? formData.phone.number : '',
-          mobile: formData.phone.type === 'Mobile' ? formData.phone.number : '',
-          landline: formData.phone.type === 'Landline' ? formData.phone.number : '',
-          other: formData.phone.type === 'Other' ? (formData.phone.customType ? `${formData.phone.customType}: ${formData.phone.number}` : formData.phone.number) : ''
-        }
+        secondPhone,
+        properties: allProperties
       };
-      delete updateData.phone; // Remove the phone field since backend expects secondPhone
+      delete updateData.phones; // Remove the phones field since backend expects secondPhone
+      
+      console.log('Updating person with data:', updateData);
 
       await axios.put(`${API_URL}/person/${selectedPerson}`, updateData);
       alert('Updated successfully');
       setIsEditing(false);
+      // Reload the person data to show updated properties
+      await loadPerson(selectedPerson);
     } catch (error) {
       console.error('Update error:', error);
       const message = error.response?.data?.message || error.response?.data?.error || 'Failed to update person';
@@ -209,19 +289,40 @@ export default function App() {
 
   const handleCreate = async () => {
     try {
-      // Transform phone data back to second_phone format for backend compatibility
+      // Transform phones data back to second_phone format for backend compatibility
+      const secondPhone = {
+        whatsapp: '',
+        telegram: '',
+        viber: '',
+        mobile: '',
+        landline: '',
+        other: ''
+      };
+
+      formData.phones.forEach(phone => {
+        if (phone.type === 'WhatsApp' && phone.number) secondPhone.whatsapp = phone.number;
+        else if (phone.type === 'Telegram' && phone.number) secondPhone.telegram = phone.number;
+        else if (phone.type === 'Viber' && phone.number) secondPhone.viber = phone.number;
+        else if (phone.type === 'Mobile' && phone.number) secondPhone.mobile = phone.number;
+        else if (phone.type === 'Landline' && phone.number) secondPhone.landline = phone.number;
+        else if (phone.type === 'Other' && phone.number) {
+          secondPhone.other = phone.customType ? `${phone.customType}: ${phone.number}` : phone.number;
+        }
+      });
+
+      // Transform properties data for backend
+      const allProperties = [
+        ...formData.properties.currentlyInPossession.map(p => ({ ...p, status: 'currently_in_possession' })),
+        ...formData.properties.sold.map(p => ({ ...p, status: 'sold' })),
+        ...formData.properties.intendedToBuy.map(p => ({ ...p, status: 'intended_to_buy' }))
+      ];
+
       const createData = {
         ...formData,
-        secondPhone: {
-          whatsapp: formData.phone.type === 'WhatsApp' ? formData.phone.number : '',
-          telegram: formData.phone.type === 'Telegram' ? formData.phone.number : '',
-          viber: formData.phone.type === 'Viber' ? formData.phone.number : '',
-          mobile: formData.phone.type === 'Mobile' ? formData.phone.number : '',
-          landline: formData.phone.type === 'Landline' ? formData.phone.number : '',
-          other: formData.phone.type === 'Other' ? (formData.phone.customType ? `${formData.phone.customType}: ${formData.phone.number}` : formData.phone.number) : ''
-        }
+        secondPhone,
+        properties: allProperties
       };
-      delete createData.phone; // Remove the phone field since backend expects secondPhone
+      delete createData.phones; // Remove the phones field since backend expects secondPhone
 
       const response = await axios.post(`${API_URL}/person`, createData);
       alert('Created successfully');
@@ -433,11 +534,109 @@ export default function App() {
   };
 
   // Phone functions
-  const updatePhone = (field, value) => {
+  const addPhone = () => {
     setFormData(prev => ({
       ...prev,
-      phone: { ...prev.phone, [field]: value }
+      phones: [...prev.phones, { type: 'WhatsApp', number: '', customType: '' }]
     }));
+  };
+
+  const updatePhone = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      phones: prev.phones.map((phone, i) => 
+        i === index ? { ...phone, [field]: value } : phone
+      )
+    }));
+  };
+
+  const removePhone = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      phones: prev.phones.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Properties functions
+  const addProperty = (section) => {
+    setFormData(prev => ({
+      ...prev,
+      properties: {
+        ...prev.properties,
+        [section]: [...prev.properties[section], {
+          propertyType: '',
+          description: '',
+          value: 0,
+          purchaseDate: '',
+          location: '',
+          documents: '',
+          buyerName: '',
+          buyerNIC: '',
+          buyerPassport: '',
+          saleDate: ''
+        }]
+      }
+    }));
+  };
+
+  const updateProperty = (section, index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      properties: {
+        ...prev.properties,
+        [section]: prev.properties[section].map((property, i) => 
+          i === index ? { ...property, [field]: value } : property
+        )
+      }
+    }));
+  };
+
+  const removeProperty = (section, index) => {
+    setFormData(prev => ({
+      ...prev,
+      properties: {
+        ...prev.properties,
+        [section]: prev.properties[section].filter((_, i) => i !== index)
+      }
+    }));
+  };
+
+  // Property document upload handler
+  const handlePropertyDocumentUpload = async (section, index, event) => {
+    const file = event.target.files[0];
+    if (file) {
+      try {
+        // Create FormData for file upload
+        const uploadFormData = new FormData();
+        uploadFormData.append('document', file);
+        uploadFormData.append('section', section);
+        uploadFormData.append('propertyIndex', index);
+        
+        // Upload to server (only if person is already saved)
+        if (selectedPerson) {
+          const uploadResponse = await axios.post(
+            `${API_URL}/person/${selectedPerson}/properties/upload`,
+            uploadFormData,
+            {
+              headers: {
+                'Content-Type': 'multipart/form-data'
+              }
+            }
+          );
+          
+          // Update the property with the uploaded file name
+          updateProperty(section, index, 'documents', uploadResponse.data.filename);
+          alert('Document uploaded successfully!');
+        } else {
+          // For new persons, just store the file name temporarily
+          updateProperty(section, index, 'documents', file.name);
+          alert('Document will be uploaded when person is saved.');
+        }
+      } catch (error) {
+        console.error('Document upload error:', error);
+        alert('Failed to upload document. Please try again.');
+      }
+    }
   };
 
   // Image upload handler for body marks
@@ -600,6 +799,20 @@ export default function App() {
           >
             Phone
           </button>
+          <button
+            onClick={() => setActiveSection('properties')}
+            style={{
+              padding: '12px',
+              backgroundColor: activeSection === 'properties' ? '#34495e' : 'transparent',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              textAlign: 'left'
+            }}
+          >
+            Assets or Properties
+          </button>
         </div>
       </div>
 
@@ -616,7 +829,7 @@ export default function App() {
             {activeSection === 'callHistory' && 'CALL HISTORY Details'}
             {activeSection === 'weapons' && 'USED WEAPONS Details'}
             {activeSection === 'phone' && 'PHONE Details'}
-            {!['personal', 'bank', 'family', 'vehicles', 'bodyMarks', 'usedDevices', 'callHistory', 'weapons', 'phone'].includes(activeSection) && 'Select a section from the left panel'}
+            {activeSection === 'properties' && 'ASSETS OR PROPERTIES Details'}
           </h2>
 
           {activeSection === 'personal' && (
@@ -1736,49 +1949,59 @@ export default function App() {
 
           {activeSection === 'phone' && (
             <div>
-              <div style={{
-                padding: '20px',
-                backgroundColor: '#f8f9fa',
-                borderRadius: '8px',
-                border: '1px solid #e9ecef'
-              }}>
-                <h4 style={{ margin: '0 0 15px 0', color: '#2c3e50' }}>Phone Number</h4>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '15px', alignItems: 'end' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
-                      Type
-                    </label>
-                    <select
-                      value={formData.phone.type}
-                      onChange={(e) => updatePhone('type', e.target.value)}
+              <button
+                onClick={addPhone}
+                style={{
+                  padding: '12px 24px',
+                  marginBottom: '20px',
+                  backgroundColor: '#3498db',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 'bold'
+                }}
+              >
+                + Add Phone Number
+              </button>
+
+              {formData.phones.map((phone, index) => (
+                <div key={index} style={{
+                  marginBottom: '25px',
+                  padding: '20px',
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '8px',
+                  border: '1px solid #e9ecef'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <h4 style={{ margin: 0, color: '#2c3e50' }}>
+                      {phone.number ? `${phone.type === 'Other' && phone.customType ? phone.customType : phone.type}: ${phone.number}` : `Phone ${index + 1}`}
+                    </h4>
+                    <button
+                      onClick={() => removePhone(index)}
                       style={{
-                        width: '100%',
-                        padding: '10px',
-                        border: '1px solid #ddd',
+                        padding: '8px 12px',
+                        backgroundColor: '#e74c3c',
+                        color: 'white',
+                        border: 'none',
                         borderRadius: '5px',
-                        fontSize: '14px'
+                        cursor: 'pointer',
+                        fontSize: '12px'
                       }}
                     >
-                      <option value="WhatsApp">WhatsApp</option>
-                      <option value="Telegram">Telegram</option>
-                      <option value="Viber">Viber</option>
-                      <option value="Mobile">Mobile</option>
-                      <option value="Landline">Landline</option>
-                      <option value="Other">Other</option>
-                    </select>
+                      Remove
+                    </button>
                   </div>
-
-                  {formData.phone.type === 'Other' && (
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 1fr', gap: '15px', alignItems: 'end' }}>
                     <div>
                       <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
-                        Custom Type
+                        Type *
                       </label>
-                      <input
-                        type="text"
-                        placeholder="Enter custom type"
-                        value={formData.phone.customType}
-                        onChange={(e) => updatePhone('customType', e.target.value)}
+                      <select
+                        value={phone.type}
+                        onChange={(e) => updatePhone(index, 'type', e.target.value)}
                         style={{
                           width: '100%',
                           padding: '10px',
@@ -1786,84 +2009,791 @@ export default function App() {
                           borderRadius: '5px',
                           fontSize: '14px'
                         }}
+                        required
+                      >
+                        <option value="WhatsApp">WhatsApp</option>
+                        <option value="Telegram">Telegram</option>
+                        <option value="Viber">Viber</option>
+                        <option value="Mobile">Mobile</option>
+                        <option value="Landline">Landline</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+
+                    {phone.type === 'Other' && (
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                          Custom Type *
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Enter custom type"
+                          value={phone.customType}
+                          onChange={(e) => updatePhone(index, 'customType', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '10px',
+                            border: '1px solid #ddd',
+                            borderRadius: '5px',
+                            fontSize: '14px'
+                          }}
+                          required
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Phone Number *
+                        <span style={{ fontSize: '12px', color: '#666', fontWeight: 'normal' }}> (spaces and hyphens will be removed automatically)</span>
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="Enter phone number"
+                        value={phone.number}
+                        onChange={(e) => updatePhone(index, 'number', validatePhoneNumber(e.target.value))}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                        required
                       />
                     </div>
-                  )}
-
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
-                      Phone Number
-                    </label>
-                    <input
-                      type="tel"
-                      placeholder="Enter phone number"
-                      value={formData.phone.number}
-                      onChange={(e) => updatePhone('number', validatePhoneNumber(e.target.value))}
-                      style={{
-                        width: '100%',
-                        padding: '10px',
-                        border: '1px solid #ddd',
-                        borderRadius: '5px',
-                        fontSize: '14px'
-                      }}
-                    />
                   </div>
                 </div>
-              </div>
+              ))}
+
+              {formData.phones.length === 0 && (
+                <div style={{
+                  padding: '40px',
+                  textAlign: 'center',
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '8px',
+                  border: '2px dashed #dee2e6',
+                  color: '#6c757d'
+                }}>
+                  <h4 style={{ margin: '0 0 10px 0' }}>No Phone Numbers Added</h4>
+                  <p style={{ margin: 0 }}>Click "Add Phone Number" to start adding phone numbers</p>
+                </div>
+              )}
             </div>
           )}
 
-          {!['personal', 'bank', 'family', 'vehicles', 'bodyMarks', 'usedDevices', 'callHistory', 'weapons', 'secondPhone'].includes(activeSection) && (
-            <div style={{
-              padding: '60px 40px',
-              textAlign: 'center',
-              backgroundColor: '#f8f9fa',
-              borderRadius: '8px',
-              border: '2px dashed #dee2e6',
-              color: '#6c757d'
-            }}>
-              <h3 style={{ margin: '0 0 20px 0', color: '#2c3e50' }}>Welcome to the Dashboard</h3>
-              <p style={{ margin: '0 0 20px 0', fontSize: '16px' }}>
-                Select a section from the left panel to start entering information
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginTop: '30px' }}>
-                <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#3498db' }}>Personal Details</h4>
-                  <p style={{ margin: 0, fontSize: '14px' }}>Basic personal information</p>
-                </div>
-                <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#e74c3c' }}>Banking Details</h4>
-                  <p style={{ margin: 0, fontSize: '14px' }}>Account and financial information</p>
-                </div>
-                <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#f39c12' }}>Family & Friends</h4>
-                  <p style={{ margin: 0, fontSize: '14px' }}>Relationships and contacts</p>
-                </div>
-                <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#9b59b6' }}>Vehicles</h4>
-                  <p style={{ margin: 0, fontSize: '14px' }}>Vehicle registration details</p>
-                </div>
-                <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#1abc9c' }}>Body Marks</h4>
-                  <p style={{ margin: 0, fontSize: '14px' }}>Identifying marks and features</p>
-                </div>
-                <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#34495e' }}>Used Devices</h4>
-                  <p style={{ margin: 0, fontSize: '14px' }}>Electronic devices and equipment</p>
-                </div>
-                <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#e67e22' }}>Call History</h4>
-                  <p style={{ margin: 0, fontSize: '14px' }}>Communication records</p>
-                </div>
-                <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#c0392b' }}>Used Weapons</h4>
-                  <p style={{ margin: 0, fontSize: '14px' }}>Weapon details and registration</p>
-                </div>
-                <div style={{ padding: '20px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e9ecef' }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#8e44ad' }}>Phone</h4>
-                  <p style={{ margin: 0, fontSize: '14px' }}>Communication platform details</p>
-                </div>
+          {activeSection === 'properties' && (
+            <div>
+              {/* Properties Tabs */}
+              <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '2px solid #e9ecef' }}>
+                {['currentlyInPossession', 'sold', 'intendedToBuy'].map((section) => (
+                  <button
+                    key={section}
+                    onClick={() => setActivePropertiesTab(section)}
+                    style={{
+                      padding: '12px 24px',
+                      backgroundColor: activePropertiesTab === section ? '#3498db' : '#f8f9fa',
+                      color: activePropertiesTab === section ? 'white' : '#2c3e50',
+                      border: 'none',
+                      borderRadius: '5px 5px 0 0',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      marginRight: '5px'
+                    }}
+                  >
+                    {section === 'currentlyInPossession' ? 'Currently in Possession' :
+                     section === 'sold' ? 'Sold' : 'Intended to Buy'}
+                  </button>
+                ))}
               </div>
+
+              {/* Currently in Possession Section */}
+              {activePropertiesTab === 'currentlyInPossession' && (
+                <div>
+                  <h3 style={{ color: '#27ae60', marginBottom: '15px' }}>Currently in Possession</h3>
+                  <button
+                    onClick={() => addProperty('currentlyInPossession')}
+                    style={{
+                      padding: '12px 24px',
+                      marginBottom: '20px',
+                      backgroundColor: '#27ae60',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    + Add Property in Possession
+                  </button>
+
+                  {formData.properties.currentlyInPossession.map((property, index) => (
+                    <div key={index} style={{
+                      marginBottom: '25px',
+                      padding: '20px',
+                      backgroundColor: '#f8fff8',
+                      borderRadius: '8px',
+                      border: '1px solid #d4edda'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                        <h4 style={{ margin: 0, color: '#27ae60' }}>
+                          {property.propertyType ? `${property.propertyType}` : `Property ${index + 1}`}
+                        </h4>
+                        <button
+                          onClick={() => removeProperty('currentlyInPossession', index)}
+                          style={{
+                            padding: '8px 12px',
+                            backgroundColor: '#e74c3c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Property Type *
+                          </label>
+                          <select
+                            value={property.propertyType}
+                            onChange={(e) => updateProperty('currentlyInPossession', index, 'propertyType', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          >
+                            <option value="">Select Property Type</option>
+                            <option value="House">House</option>
+                            <option value="Apartment">Apartment</option>
+                            <option value="Land">Land</option>
+                            <option value="Commercial Building">Commercial Building</option>
+                            <option value="Vehicle">Vehicle</option>
+                            <option value="Jewelry">Jewelry</option>
+                            <option value="Electronics">Electronics</option>
+                            <option value="Artwork">Artwork</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Estimated Value (LKR) *
+                          </label>
+                          <input
+                            type="number"
+                            placeholder="Enter estimated value"
+                            value={property.value}
+                            onChange={(e) => updateProperty('currentlyInPossession', index, 'value', parseFloat(e.target.value) || 0)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Purchase Date *
+                          </label>
+                          <input
+                            type="date"
+                            value={property.purchaseDate}
+                            onChange={(e) => updateProperty('currentlyInPossession', index, 'purchaseDate', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Location/Address
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Enter property location"
+                            value={property.location}
+                            onChange={(e) => updateProperty('currentlyInPossession', index, 'location', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                          />
+                        </div>
+
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Description
+                          </label>
+                          <textarea
+                            placeholder="Describe the property details"
+                            value={property.description}
+                            onChange={(e) => updateProperty('currentlyInPossession', index, 'description', e.target.value)}
+                            rows="3"
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px',
+                              resize: 'vertical'
+                            }}
+                          />
+                        </div>
+
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Property Documents Upload
+                          </label>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            <input
+                              type="file"
+                              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif"
+                              onChange={(e) => handlePropertyDocumentUpload('currentlyInPossession', index, e)}
+                              style={{
+                                flex: 1,
+                                padding: '10px',
+                                border: '1px solid #ddd',
+                                borderRadius: '5px',
+                                fontSize: '14px'
+                              }}
+                            />
+                            {property.documents && (
+                              <span style={{ color: '#27ae60', fontSize: '12px' }}>
+                                📁 {property.documents}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {formData.properties.currentlyInPossession.length === 0 && (
+                    <div style={{
+                      padding: '40px',
+                      textAlign: 'center',
+                      backgroundColor: '#f8fff8',
+                      borderRadius: '8px',
+                      border: '2px dashed #d4edda',
+                      color: '#6c757d'
+                    }}>
+                      <h4 style={{ margin: '0 0 10px 0' }}>No Properties in Possession</h4>
+                      <p style={{ margin: 0 }}>Click "Add Property in Possession" to start adding properties you currently own</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sold Section */}
+              {activePropertiesTab === 'sold' && (
+                <div>
+                  <h3 style={{ color: '#e74c3c', marginBottom: '15px' }}>Sold Properties</h3>
+                  <button
+                    onClick={() => addProperty('sold')}
+                    style={{
+                      padding: '12px 24px',
+                      marginBottom: '20px',
+                      backgroundColor: '#e74c3c',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    + Add Sold Property
+                  </button>
+
+                  {formData.properties.sold.map((property, index) => (
+                    <div key={index} style={{
+                      marginBottom: '25px',
+                      padding: '20px',
+                      backgroundColor: '#fff5f5',
+                      borderRadius: '8px',
+                      border: '1px solid #f5c6cb'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                        <h4 style={{ margin: 0, color: '#e74c3c' }}>
+                          {property.propertyType ? `${property.propertyType} (SOLD)` : `Sold Property ${index + 1}`}
+                        </h4>
+                        <button
+                          onClick={() => removeProperty('sold', index)}
+                          style={{
+                            padding: '8px 12px',
+                            backgroundColor: '#e74c3c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Property Type *
+                          </label>
+                          <select
+                            value={property.propertyType}
+                            onChange={(e) => updateProperty('sold', index, 'propertyType', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          >
+                            <option value="">Select Property Type</option>
+                            <option value="House">House</option>
+                            <option value="Apartment">Apartment</option>
+                            <option value="Land">Land</option>
+                            <option value="Commercial Building">Commercial Building</option>
+                            <option value="Vehicle">Vehicle</option>
+                            <option value="Jewelry">Jewelry</option>
+                            <option value="Electronics">Electronics</option>
+                            <option value="Artwork">Artwork</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Sale Value (LKR) *
+                          </label>
+                          <input
+                            type="number"
+                            placeholder="Enter sale value"
+                            value={property.value}
+                            onChange={(e) => updateProperty('sold', index, 'value', parseFloat(e.target.value) || 0)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Purchase Date *
+                          </label>
+                          <input
+                            type="date"
+                            value={property.purchaseDate}
+                            onChange={(e) => updateProperty('sold', index, 'purchaseDate', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Sale Date *
+                          </label>
+                          <input
+                            type="date"
+                            value={property.saleDate}
+                            onChange={(e) => updateProperty('sold', index, 'saleDate', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Location/Address
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Enter property location"
+                            value={property.location}
+                            onChange={(e) => updateProperty('sold', index, 'location', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                          />
+                        </div>
+
+                        {/* Buyer Information Section */}
+                        <div style={{ gridColumn: '1 / -1', marginTop: '20px', padding: '20px', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e9ecef' }}>
+                          <h5 style={{ margin: '0 0 15px 0', color: '#e74c3c' }}>Buyer Information</h5>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                                Buyer's Full Name *
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Enter buyer's full name"
+                                value={property.buyerName}
+                                onChange={(e) => updateProperty('sold', index, 'buyerName', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '5px',
+                                  fontSize: '14px'
+                                }}
+                                required
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                                Buyer's NIC Number *
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Enter buyer's NIC number"
+                                value={property.buyerNIC}
+                                onChange={(e) => updateProperty('sold', index, 'buyerNIC', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '5px',
+                                  fontSize: '14px'
+                                }}
+                                required
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                                Buyer's Passport Number
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Enter buyer's passport number"
+                                value={property.buyerPassport}
+                                onChange={(e) => updateProperty('sold', index, 'buyerPassport', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '5px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Description
+                          </label>
+                          <textarea
+                            placeholder="Describe the property details"
+                            value={property.description}
+                            onChange={(e) => updateProperty('sold', index, 'description', e.target.value)}
+                            rows="3"
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px',
+                              resize: 'vertical'
+                            }}
+                          />
+                        </div>
+
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Property Documents Upload
+                          </label>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            <input
+                              type="file"
+                              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif"
+                              onChange={(e) => handlePropertyDocumentUpload('sold', index, e)}
+                              style={{
+                                flex: 1,
+                                padding: '10px',
+                                border: '1px solid #ddd',
+                                borderRadius: '5px',
+                                fontSize: '14px'
+                              }}
+                            />
+                            {property.documents && (
+                              <span style={{ color: '#e74c3c', fontSize: '12px' }}>
+                                📁 {property.documents}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {formData.properties.sold.length === 0 && (
+                    <div style={{
+                      padding: '40px',
+                      textAlign: 'center',
+                      backgroundColor: '#fff5f5',
+                      borderRadius: '8px',
+                      border: '2px dashed #f5c6cb',
+                      color: '#6c757d'
+                    }}>
+                      <h4 style={{ margin: '0 0 10px 0' }}>No Sold Properties</h4>
+                      <p style={{ margin: 0 }}>Click "Add Sold Property" to start adding properties you have sold</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Intended to Buy Section */}
+              {activePropertiesTab === 'intendedToBuy' && (
+                <div>
+                  <h3 style={{ color: '#f39c12', marginBottom: '15px' }}>Intended to Buy</h3>
+                  {console.log('Rendering intendedToBuy section. Properties:', formData.properties.intendedToBuy)}
+                  <button
+                    onClick={() => addProperty('intendedToBuy')}
+                    style={{
+                      padding: '12px 24px',
+                      marginBottom: '20px',
+                      backgroundColor: '#f39c12',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    + Add Property to Buy
+                  </button>
+
+                  {formData.properties.intendedToBuy.map((property, index) => (
+                    <div key={index} style={{
+                      marginBottom: '25px',
+                      padding: '20px',
+                      backgroundColor: '#fffbf0',
+                      borderRadius: '8px',
+                      border: '1px solid #ffeeba'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                        <h4 style={{ margin: 0, color: '#f39c12' }}>
+                          {property.propertyType ? `${property.propertyType} (INTENDED)` : `Intended Property ${index + 1}`}
+                        </h4>
+                        <button
+                          onClick={() => removeProperty('intendedToBuy', index)}
+                          style={{
+                            padding: '8px 12px',
+                            backgroundColor: '#e74c3c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Property Type *
+                          </label>
+                          <select
+                            value={property.propertyType}
+                            onChange={(e) => updateProperty('intendedToBuy', index, 'propertyType', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          >
+                            <option value="">Select Property Type</option>
+                            <option value="House">House</option>
+                            <option value="Apartment">Apartment</option>
+                            <option value="Land">Land</option>
+                            <option value="Commercial Building">Commercial Building</option>
+                            <option value="Vehicle">Vehicle</option>
+                            <option value="Jewelry">Jewelry</option>
+                            <option value="Electronics">Electronics</option>
+                            <option value="Artwork">Artwork</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Expected Value (LKR) *
+                          </label>
+                          <input
+                            type="number"
+                            placeholder="Enter expected value"
+                            value={property.value}
+                            onChange={(e) => updateProperty('intendedToBuy', index, 'value', parseFloat(e.target.value) || 0)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Intended Purchase Date
+                          </label>
+                          <input
+                            type="date"
+                            value={property.purchaseDate}
+                            onChange={(e) => updateProperty('intendedToBuy', index, 'purchaseDate', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Location/Address
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Enter property location"
+                            value={property.location}
+                            onChange={(e) => updateProperty('intendedToBuy', index, 'location', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                          />
+                        </div>
+
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Description
+                          </label>
+                          <textarea
+                            placeholder="Describe the property details and reasons for wanting to buy"
+                            value={property.description}
+                            onChange={(e) => updateProperty('intendedToBuy', index, 'description', e.target.value)}
+                            rows="3"
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px',
+                              resize: 'vertical'
+                            }}
+                          />
+                        </div>
+
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Property Documents Upload
+                          </label>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            <input
+                              type="file"
+                              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif"
+                              onChange={(e) => handlePropertyDocumentUpload('intendedToBuy', index, e)}
+                              style={{
+                                flex: 1,
+                                padding: '10px',
+                                border: '1px solid #ddd',
+                                borderRadius: '5px',
+                                fontSize: '14px'
+                              }}
+                            />
+                            {property.documents && (
+                              <span style={{ color: '#f39c12', fontSize: '12px' }}>
+                                📁 {property.documents}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {formData.properties.intendedToBuy.length === 0 && (
+                    <div style={{
+                      padding: '40px',
+                      textAlign: 'center',
+                      backgroundColor: '#fffbf0',
+                      borderRadius: '8px',
+                      border: '2px dashed #ffeeba',
+                      color: '#6c757d'
+                    }}>
+                      <h4 style={{ margin: '0 0 10px 0' }}>No Properties to Buy</h4>
+                      <p style={{ margin: 0 }}>Click "Add Property to Buy" to start adding properties you intend to purchase</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
