@@ -188,6 +188,30 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
       [id]
     );
 
+    // Get enemy individuals
+    const enemyIndividualsResult = await pool.query(
+      `SELECT ei.*, p.first_name, p.last_name, p.nic 
+       FROM enemy_individuals ei 
+       JOIN people p ON ei.enemy_person_id = p.id 
+       WHERE ei.person_id = $1 ORDER BY ei.created_at DESC`,
+      [id]
+    );
+
+    // Get enemy gangs
+    const enemyGangsResult = await pool.query(
+      'SELECT * FROM enemy_gangs WHERE person_id = $1 ORDER BY created_at DESC',
+      [id]
+    );
+
+    // Get corrupted officials
+    const corruptedOfficialsResult = await pool.query(
+      `SELECT co.*, p.first_name, p.last_name, p.nic 
+       FROM corrupted_officials co 
+       JOIN people p ON co.official_person_id = p.id 
+       WHERE co.person_id = $1 ORDER BY co.created_at DESC`,
+      [id]
+    );
+
     // Get properties
     const propertiesResult = await pool.query(
       'SELECT * FROM properties WHERE person_id = $1 ORDER BY created_at DESC',
@@ -295,6 +319,30 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         from_date: gang.from_date,
         to_date: gang.to_date,
         currently_active: gang.currently_active
+      })),
+      enemyIndividuals: enemyIndividualsResult.rows.map(enemy => ({
+        id: enemy.id,
+        enemy_person_id: enemy.enemy_person_id,
+        enemy_name: `${enemy.first_name} ${enemy.last_name}`,
+        enemy_nic: enemy.nic,
+        relationship_type: enemy.relationship_type,
+        threat_level: enemy.threat_level,
+        notes: enemy.notes
+      })),
+      enemyGangs: enemyGangsResult.rows.map(gang => ({
+        id: gang.id,
+        gang_name: gang.gang_name,
+        threat_level: gang.threat_level,
+        notes: gang.notes
+      })),
+      corruptedOfficials: corruptedOfficialsResult.rows.map(official => ({
+        id: official.id,
+        official_person_id: official.official_person_id,
+        official_name: `${official.first_name} ${official.last_name}`,
+        official_nic: official.nic,
+        department: official.department,
+        corruption_type: official.corruption_type,
+        notes: official.notes
       }))
     };
     
@@ -906,6 +954,37 @@ app.get('/api/properties/documents/:filename', (req, res) => {
   } catch (err) {
     console.error('Property document serve error:', err);
     res.status(500).json({ error: 'Failed to serve property document' });
+  }
+});
+
+// 7. GET ALL ENEMY GANGS (for dropdown)
+app.get('/api/enemy-gangs', checkDbConnection, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT DISTINCT gang_name FROM enemy_gangs ORDER BY gang_name'
+    );
+    res.json(result.rows.map(row => row.gang_name));
+  } catch (err) {
+    console.error('GET /api/enemy-gangs error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// 8. CREATE NEW PERSON (Quick creation for references)
+app.post('/api/person/quick', checkDbConnection, async (req, res) => {
+  try {
+    const { firstName, lastName, fullName, nic, passport, department } = req.body;
+    
+    const result = await pool.query(
+      `INSERT INTO people (first_name, last_name, full_name, nic, passport) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING id, first_name, last_name, nic, passport`,
+      [firstName, lastName, fullName || `${firstName} ${lastName}`, nic, passport]
+    );
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('POST /api/person/quick error:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 

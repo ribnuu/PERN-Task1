@@ -9,6 +9,9 @@ export default function App() {
   const [activePersonalTab, setActivePersonalTab] = useState('basicInfo');
   const [showGangDetails, setShowGangDetails] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [enemyGangsList, setEnemyGangsList] = useState([]);
+  const [showNewPersonModal, setShowNewPersonModal] = useState(false);
+  const [newPersonType, setNewPersonType] = useState(''); // 'enemy', 'official', etc.
   const [searchResults, setSearchResults] = useState([]);
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -39,7 +42,12 @@ export default function App() {
       currentlyInPossession: [],
       sold: [],
       intendedToBuy: []
-    }
+    },
+    enemies: {
+      individuals: [],
+      gangs: []
+    },
+    corruptedOfficials: []
   });
 
   // Family relationship options
@@ -228,6 +236,30 @@ export default function App() {
           fromDate: g.from_date ? g.from_date.split('T')[0] : '',
           toDate: g.to_date ? g.to_date.split('T')[0] : '',
           currentlyActive: g.currently_active || false
+        })) : [],
+        enemies: {
+          individuals: data.enemyIndividuals ? data.enemyIndividuals.map(e => ({
+            enemyPersonId: e.enemy_person_id || '',
+            enemyName: e.enemy_name || '',
+            enemyNic: e.enemy_nic || '',
+            relationshipType: e.relationship_type || '',
+            threatLevel: e.threat_level || 'Low',
+            notes: e.notes || ''
+          })) : [],
+          gangs: data.enemyGangs ? data.enemyGangs.map(g => ({
+            gangName: g.gang_name || '',
+            threatLevel: g.threat_level || 'Low',
+            notes: g.notes || ''
+          })) : []
+        },
+        corruptedOfficials: data.corruptedOfficials ? data.corruptedOfficials.map(o => ({
+          officialPersonId: o.official_person_id || '',
+          officialName: o.official_name || '',
+          officialNic: o.official_nic || '',
+          officialPassport: o.official_passport || '',
+          department: o.department || '',
+          corruptionType: o.corruption_type || '',
+          notes: o.notes || ''
         })) : []
       });
       setIsEditing(false);
@@ -710,6 +742,143 @@ export default function App() {
     }
   };
 
+  // Enemy handlers
+  const addEnemyIndividual = () => {
+    setFormData(prev => ({
+      ...prev,
+      enemies: {
+        ...prev.enemies,
+        individuals: [...prev.enemies.individuals, {
+          enemyPersonId: '',
+          enemyName: '',
+          enemyNic: '',
+          relationshipType: '',
+          threatLevel: 'Low',
+          notes: ''
+        }]
+      }
+    }));
+  };
+
+  const updateEnemyIndividual = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      enemies: {
+        ...prev.enemies,
+        individuals: prev.enemies.individuals.map((enemy, i) => 
+          i === index ? { ...enemy, [field]: value } : enemy
+        )
+      }
+    }));
+  };
+
+  const removeEnemyIndividual = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      enemies: {
+        ...prev.enemies,
+        individuals: prev.enemies.individuals.filter((_, i) => i !== index)
+      }
+    }));
+  };
+
+  const addEnemyGang = () => {
+    setFormData(prev => ({
+      ...prev,
+      enemies: {
+        ...prev.enemies,
+        gangs: [...prev.enemies.gangs, {
+          gangName: '',
+          threatLevel: 'Low',
+          notes: ''
+        }]
+      }
+    }));
+  };
+
+  const updateEnemyGang = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      enemies: {
+        ...prev.enemies,
+        gangs: prev.enemies.gangs.map((gang, i) => 
+          i === index ? { ...gang, [field]: value } : gang
+        )
+      }
+    }));
+  };
+
+  const removeEnemyGang = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      enemies: {
+        ...prev.enemies,
+        gangs: prev.enemies.gangs.filter((_, i) => i !== index)
+      }
+    }));
+  };
+
+  // Corrupted Officials handlers
+  const addCorruptedOfficial = () => {
+    setFormData(prev => ({
+      ...prev,
+      corruptedOfficials: [...prev.corruptedOfficials, {
+        officialPersonId: '',
+        officialName: '',
+        officialNic: '',
+        officialPassport: '',
+        department: '',
+        corruptionType: '',
+        notes: ''
+      }]
+    }));
+  };
+
+  const updateCorruptedOfficial = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      corruptedOfficials: prev.corruptedOfficials.map((official, i) => 
+        i === index ? { ...official, [field]: value } : official
+      )
+    }));
+  };
+
+  const removeCorruptedOfficial = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      corruptedOfficials: prev.corruptedOfficials.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Function to create new person and add to dropdown
+  const handleCreateNewPerson = async (personData, targetSection, targetIndex, targetField) => {
+    try {
+      const response = await axios.post(`${API_URL}/person/quick`, personData);
+      const newPerson = response.data;
+      
+      // Update the appropriate field with the new person's ID
+      if (targetSection === 'enemyIndividual') {
+        updateEnemyIndividual(targetIndex, 'enemyPersonId', newPerson.id);
+        updateEnemyIndividual(targetIndex, 'enemyName', `${newPerson.first_name} ${newPerson.last_name}`);
+        updateEnemyIndividual(targetIndex, 'enemyNic', newPerson.nic);
+      } else if (targetSection === 'corruptedOfficial') {
+        updateCorruptedOfficial(targetIndex, 'officialPersonId', newPerson.id);
+        updateCorruptedOfficial(targetIndex, 'officialName', `${newPerson.first_name} ${newPerson.last_name}`);
+        updateCorruptedOfficial(targetIndex, 'officialNic', newPerson.nic);
+      }
+      
+      // Refresh search results to include new person
+      if (searchQuery) {
+        await handleSearch();
+      }
+      
+      alert('New person created successfully!');
+    } catch (error) {
+      console.error('Error creating new person:', error);
+      alert('Failed to create new person. Please try again.');
+    }
+  };
+
   return (
     <div style={{ display: 'flex', height: '100vh', fontFamily: 'Arial, sans-serif' }}>
       {/* LEFT PANEL */}
@@ -872,6 +1041,34 @@ export default function App() {
           >
             Assets or Properties
           </button>
+          <button
+            onClick={() => setActiveSection('enemies')}
+            style={{
+              padding: '12px',
+              backgroundColor: activeSection === 'enemies' ? '#34495e' : 'transparent',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              textAlign: 'left'
+            }}
+          >
+            Enemies
+          </button>
+          <button
+            onClick={() => setActiveSection('corruptedOfficials')}
+            style={{
+              padding: '12px',
+              backgroundColor: activeSection === 'corruptedOfficials' ? '#34495e' : 'transparent',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              textAlign: 'left'
+            }}
+          >
+            Corrupted Officials
+          </button>
         </div>
       </div>
 
@@ -889,6 +1086,8 @@ export default function App() {
             {activeSection === 'weapons' && 'USED WEAPONS Details'}
             {activeSection === 'phone' && 'PHONE Details'}
             {activeSection === 'properties' && 'ASSETS OR PROPERTIES Details'}
+            {activeSection === 'enemies' && 'ENEMIES Details'}
+            {activeSection === 'corruptedOfficials' && 'CORRUPTED OFFICIALS Details'}
           </h2>
 
           {activeSection === 'personal' && (
@@ -3229,6 +3428,565 @@ export default function App() {
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ENEMIES SECTION */}
+          {activeSection === 'enemies' && (
+            <div>
+              <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '2px solid #e9ecef' }}>
+                <button
+                  onClick={() => setActivePersonalTab('enemyIndividuals')}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: activePersonalTab === 'enemyIndividuals' ? '#e74c3c' : '#f8f9fa',
+                    color: activePersonalTab === 'enemyIndividuals' ? 'white' : '#2c3e50',
+                    border: 'none',
+                    borderRadius: '5px 5px 0 0',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    marginRight: '5px'
+                  }}
+                >
+                  Enemy Individuals
+                </button>
+                <button
+                  onClick={() => setActivePersonalTab('enemyGangs')}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: activePersonalTab === 'enemyGangs' ? '#e74c3c' : '#f8f9fa',
+                    color: activePersonalTab === 'enemyGangs' ? 'white' : '#2c3e50',
+                    border: 'none',
+                    borderRadius: '5px 5px 0 0',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  Enemy Gangs
+                </button>
+              </div>
+
+              {/* Enemy Individuals Section */}
+              {activePersonalTab === 'enemyIndividuals' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <h3 style={{ color: '#e74c3c', margin: 0 }}>Enemy Individuals</h3>
+                    <button
+                      onClick={addEnemyIndividual}
+                      style={{
+                        padding: '10px 20px',
+                        backgroundColor: '#e74c3c',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      + Add Enemy Individual
+                    </button>
+                  </div>
+
+                  {formData.enemies.individuals.length === 0 && (
+                    <div style={{
+                      padding: '40px',
+                      textAlign: 'center',
+                      backgroundColor: '#fff5f5',
+                      borderRadius: '8px',
+                      border: '2px dashed #f5c6cb',
+                      color: '#6c757d'
+                    }}>
+                      <h4 style={{ margin: '0 0 10px 0' }}>No Enemy Individuals</h4>
+                      <p style={{ margin: 0 }}>Click "Add Enemy Individual" to start recording enemy individuals</p>
+                    </div>
+                  )}
+
+                  {formData.enemies.individuals.map((enemy, index) => (
+                    <div key={index} style={{
+                      marginBottom: '25px',
+                      padding: '20px',
+                      backgroundColor: '#fff5f5',
+                      borderRadius: '8px',
+                      border: '1px solid #f5c6cb'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                        <h4 style={{ margin: 0, color: '#e74c3c' }}>
+                          Enemy Individual {index + 1}
+                        </h4>
+                        <button
+                          onClick={() => removeEnemyIndividual(index)}
+                          style={{
+                            padding: '8px 12px',
+                            backgroundColor: '#dc3545',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Enemy Name *
+                          </label>
+                          <input
+                            type="text"
+                            value={enemy.enemyName}
+                            onChange={(e) => updateEnemyIndividual(index, 'enemyName', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                            placeholder="Enter enemy's full name or create new person"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Enemy NIC
+                          </label>
+                          <input
+                            type="text"
+                            value={enemy.enemyNic}
+                            onChange={(e) => updateEnemyIndividual(index, 'enemyNic', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            placeholder="NIC number"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Relationship Type *
+                          </label>
+                          <select
+                            value={enemy.relationshipType}
+                            onChange={(e) => updateEnemyIndividual(index, 'relationshipType', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          >
+                            <option value="">Select Relationship</option>
+                            <option value="Business Rival">Business Rival</option>
+                            <option value="Personal Vendetta">Personal Vendetta</option>
+                            <option value="Gang Conflict">Gang Conflict</option>
+                            <option value="Territory Dispute">Territory Dispute</option>
+                            <option value="Family Feud">Family Feud</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Threat Level *
+                          </label>
+                          <select
+                            value={enemy.threatLevel}
+                            onChange={(e) => updateEnemyIndividual(index, 'threatLevel', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          >
+                            <option value="Low">Low</option>
+                            <option value="Medium">Medium</option>
+                            <option value="High">High</option>
+                            <option value="Critical">Critical</option>
+                          </select>
+                        </div>
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Notes
+                          </label>
+                          <textarea
+                            value={enemy.notes}
+                            onChange={(e) => updateEnemyIndividual(index, 'notes', e.target.value)}
+                            rows="3"
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            placeholder="Additional notes about this enemy relationship"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Enemy Gangs Section */}
+              {activePersonalTab === 'enemyGangs' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <h3 style={{ color: '#e74c3c', margin: 0 }}>Enemy Gangs</h3>
+                    <button
+                      onClick={addEnemyGang}
+                      style={{
+                        padding: '10px 20px',
+                        backgroundColor: '#e74c3c',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      + Add Enemy Gang
+                    </button>
+                  </div>
+
+                  {formData.enemies.gangs.length === 0 && (
+                    <div style={{
+                      padding: '40px',
+                      textAlign: 'center',
+                      backgroundColor: '#fff5f5',
+                      borderRadius: '8px',
+                      border: '2px dashed #f5c6cb',
+                      color: '#6c757d'
+                    }}>
+                      <h4 style={{ margin: '0 0 10px 0' }}>No Enemy Gangs</h4>
+                      <p style={{ margin: 0 }}>Click "Add Enemy Gang" to start recording enemy gangs</p>
+                    </div>
+                  )}
+
+                  {formData.enemies.gangs.map((gang, index) => (
+                    <div key={index} style={{
+                      marginBottom: '25px',
+                      padding: '20px',
+                      backgroundColor: '#fff5f5',
+                      borderRadius: '8px',
+                      border: '1px solid #f5c6cb'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                        <h4 style={{ margin: 0, color: '#e74c3c' }}>
+                          Enemy Gang {index + 1}
+                        </h4>
+                        <button
+                          onClick={() => removeEnemyGang(index)}
+                          style={{
+                            padding: '8px 12px',
+                            backgroundColor: '#dc3545',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Gang Name *
+                          </label>
+                          <select
+                            value={gang.gangName}
+                            onChange={(e) => updateEnemyGang(index, 'gangName', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          >
+                            <option value="">Select Gang</option>
+                            <option value="Black Serpents">Black Serpents</option>
+                            <option value="Iron Wolves">Iron Wolves</option>
+                            <option value="Red Dragons">Red Dragons</option>
+                            <option value="Golden Eagles">Golden Eagles</option>
+                            <option value="Other">Other</option>
+                          </select>
+                          {gang.gangName === 'Other' && (
+                            <input
+                              type="text"
+                              placeholder="Enter gang name"
+                              style={{
+                                width: '100%',
+                                marginTop: '5px',
+                                padding: '10px',
+                                border: '1px solid #ddd',
+                                borderRadius: '5px',
+                                fontSize: '14px'
+                              }}
+                              onChange={(e) => updateEnemyGang(index, 'customGangName', e.target.value)}
+                            />
+                          )}
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Threat Level *
+                          </label>
+                          <select
+                            value={gang.threatLevel}
+                            onChange={(e) => updateEnemyGang(index, 'threatLevel', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          >
+                            <option value="Low">Low</option>
+                            <option value="Medium">Medium</option>
+                            <option value="High">High</option>
+                            <option value="Critical">Critical</option>
+                          </select>
+                        </div>
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Notes
+                          </label>
+                          <textarea
+                            value={gang.notes}
+                            onChange={(e) => updateEnemyGang(index, 'notes', e.target.value)}
+                            rows="3"
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            placeholder="Additional notes about this enemy gang relationship"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CORRUPTED OFFICIALS SECTION */}
+          {activeSection === 'corruptedOfficials' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ color: '#dc3545', margin: 0 }}>Corrupted Officials</h3>
+                <button
+                  onClick={addCorruptedOfficial}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#dc3545',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  + Add Corrupted Official
+                </button>
+              </div>
+
+              {formData.corruptedOfficials.length === 0 && (
+                <div style={{
+                  padding: '40px',
+                  textAlign: 'center',
+                  backgroundColor: '#fff5f5',
+                  borderRadius: '8px',
+                  border: '2px dashed #f5c6cb',
+                  color: '#6c757d'
+                }}>
+                  <h4 style={{ margin: '0 0 10px 0' }}>No Corrupted Officials</h4>
+                  <p style={{ margin: 0 }}>Click "Add Corrupted Official" to start recording corrupted officials</p>
+                </div>
+              )}
+
+              {formData.corruptedOfficials.map((official, index) => (
+                <div key={index} style={{
+                  marginBottom: '25px',
+                  padding: '20px',
+                  backgroundColor: '#fff5f5',
+                  borderRadius: '8px',
+                  border: '1px solid #f5c6cb'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <h4 style={{ margin: 0, color: '#dc3545' }}>
+                      Corrupted Official {index + 1}
+                    </h4>
+                    <button
+                      onClick={() => removeCorruptedOfficial(index)}
+                      style={{
+                        padding: '8px 12px',
+                        backgroundColor: '#dc3545',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Department *
+                      </label>
+                      <select
+                        value={official.department}
+                        onChange={(e) => updateCorruptedOfficial(index, 'department', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                        required
+                      >
+                        <option value="">Select Department</option>
+                        <option value="Police Department">Police Department</option>
+                        <option value="Customs Office">Customs Office</option>
+                        <option value="Immigration Department">Immigration Department</option>
+                        <option value="Tax Department">Tax Department</option>
+                        <option value="Municipal Council">Municipal Council</option>
+                        <option value="Court System">Court System</option>
+                        <option value="Prison Services">Prison Services</option>
+                        <option value="Transport Department">Transport Department</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Full Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={official.officialName}
+                        onChange={(e) => updateCorruptedOfficial(index, 'officialName', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                        required
+                        placeholder="Enter official's full name"
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        NIC Number
+                      </label>
+                      <input
+                        type="text"
+                        value={official.officialNic}
+                        onChange={(e) => updateCorruptedOfficial(index, 'officialNic', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                        placeholder="NIC number"
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Passport Number
+                      </label>
+                      <input
+                        type="text"
+                        value={official.officialPassport}
+                        onChange={(e) => updateCorruptedOfficial(index, 'officialPassport', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                        placeholder="Passport number"
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Corruption Type
+                      </label>
+                      <select
+                        value={official.corruptionType}
+                        onChange={(e) => updateCorruptedOfficial(index, 'corruptionType', e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                      >
+                        <option value="">Select Corruption Type</option>
+                        <option value="Bribery">Bribery</option>
+                        <option value="Information Leak">Information Leak</option>
+                        <option value="Document Forgery">Document Forgery</option>
+                        <option value="Evidence Tampering">Evidence Tampering</option>
+                        <option value="Illegal Favors">Illegal Favors</option>
+                        <option value="Blackmail">Blackmail</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                        Notes
+                      </label>
+                      <textarea
+                        value={official.notes}
+                        onChange={(e) => updateCorruptedOfficial(index, 'notes', e.target.value)}
+                        rows="3"
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '5px',
+                          fontSize: '14px'
+                        }}
+                        placeholder="Additional notes about this corrupted official relationship"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
