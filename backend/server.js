@@ -104,10 +104,12 @@ app.get('/api/search', checkDbConnection, async (req, res) => {
   try {
     const { query } = req.query;
     const result = await pool.query(
-      `SELECT id, first_name, last_name, nic 
-       FROM people 
-       WHERE first_name ILIKE $1 OR last_name ILIKE $1 OR nic ILIKE $1
-       ORDER BY first_name`,
+      `SELECT DISTINCT p.id, p.first_name, p.last_name, p.nic, p.passport, p.full_name 
+       FROM people p
+       LEFT JOIN gang_details g ON p.id = g.person_id
+       WHERE p.first_name ILIKE $1 OR p.last_name ILIKE $1 OR p.nic ILIKE $1 
+          OR p.passport ILIKE $1 OR p.full_name ILIKE $1 OR g.gang_name ILIKE $1
+       ORDER BY p.first_name`,
       [`%${query}%`]
     );
     res.json(result.rows);
@@ -180,6 +182,12 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
       [id]
     );
 
+    // Get gang details
+    const gangResult = await pool.query(
+      'SELECT * FROM gang_details WHERE person_id = $1 ORDER BY from_date DESC',
+      [id]
+    );
+
     // Get properties
     const propertiesResult = await pool.query(
       'SELECT * FROM properties WHERE person_id = $1 ORDER BY created_at DESC',
@@ -194,7 +202,14 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         id: personResult.rows[0].id,
         first_name: personResult.rows[0].first_name,
         last_name: personResult.rows[0].last_name,
+        full_name: personResult.rows[0].full_name,
+        aliases: personResult.rows[0].aliases,
+        passport: personResult.rows[0].passport,
         nic: personResult.rows[0].nic,
+        height: personResult.rows[0].height,
+        religion: personResult.rows[0].religion,
+        gender: personResult.rows[0].gender,
+        date_of_birth: personResult.rows[0].date_of_birth,
         address: personResult.rows[0].address
       },
       bank: bankResult.rows[0] ? {
@@ -272,6 +287,14 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         buyer_name: property.buyer_name,
         buyer_nic: property.buyer_nic,
         buyer_passport: property.buyer_passport
+      })),
+      gangDetails: gangResult.rows.map(gang => ({
+        id: gang.id,
+        gang_name: gang.gang_name,
+        position_in_gang: gang.position_in_gang,
+        from_date: gang.from_date,
+        to_date: gang.to_date,
+        currently_active: gang.currently_active
       }))
     };
     
@@ -287,15 +310,27 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
   const client = await pool.connect();
   
   try {
-    const { personal, bank, family, vehicles, bodyMarks, usedDevices, callHistory, weapons, secondPhone, properties } = req.body;
+    const { personal, gangDetails, bank, family, vehicles, bodyMarks, usedDevices, callHistory, weapons, secondPhone, properties } = req.body;
     
     await client.query('BEGIN');
     
     // Insert person
     const personResult = await client.query(
-      `INSERT INTO people (first_name, last_name, nic, address) 
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [personal.firstName, personal.lastName, personal.nic, personal.address]
+      `INSERT INTO people (first_name, last_name, full_name, aliases, passport, nic, height, religion, gender, date_of_birth, address) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+      [
+        personal.firstName, 
+        personal.lastName, 
+        personal.fullName || `${personal.firstName} ${personal.lastName}`,
+        personal.aliases,
+        personal.passport,
+        personal.nic, 
+        personal.height ? parseFloat(personal.height) : null,
+        personal.religion,
+        personal.gender,
+        personal.dateOfBirth || null,
+        personal.address
+      ]
     );
     
     const personId = personResult.rows[0].id;
@@ -316,6 +351,17 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
           `INSERT INTO family_members (person_id, relation, custom_relation, first_name, last_name, age, nic, phone_number)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [personId, member.relation, member.customRelation || null, member.firstName, member.lastName || null, member.age || null, member.nic || null, member.phoneNumber || null]
+        );
+      }
+    }
+
+    // Insert gang details if provided
+    if (gangDetails && gangDetails.length > 0) {
+      for (const gang of gangDetails) {
+        await client.query(
+          `INSERT INTO gang_details (person_id, gang_name, position_in_gang, from_date, to_date, currently_active)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [personId, gang.gangName, gang.position, gang.fromDate || null, gang.toDate || null, gang.currentlyActive || false]
         );
       }
     }
@@ -440,9 +486,24 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     // Update person
     await client.query(
       `UPDATE people 
-       SET first_name = $1, last_name = $2, nic = $3, address = $4, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5`,
-      [personal.firstName, personal.lastName, personal.nic, personal.address, id]
+       SET first_name = $1, last_name = $2, full_name = $3, aliases = $4, passport = $5, 
+           nic = $6, height = $7, religion = $8, gender = $9, date_of_birth = $10, 
+           address = $11, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $12`,
+      [
+        personal.firstName, 
+        personal.lastName, 
+        personal.fullName || `${personal.firstName} ${personal.lastName}`,
+        personal.aliases,
+        personal.passport,
+        personal.nic, 
+        personal.height ? parseFloat(personal.height) : null,
+        personal.religion,
+        personal.gender,
+        personal.dateOfBirth || null,
+        personal.address, 
+        id
+      ]
     );
     
     // Update or insert bank details

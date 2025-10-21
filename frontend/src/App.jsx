@@ -6,12 +6,27 @@ const API_URL = 'http://localhost:5000/api';
 export default function App() {
   const [activeSection, setActiveSection] = useState('personal');
   const [activePropertiesTab, setActivePropertiesTab] = useState('currentlyInPossession');
+  const [activePersonalTab, setActivePersonalTab] = useState('basicInfo');
+  const [showGangDetails, setShowGangDetails] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
-    personal: { firstName: '', lastName: '', nic: '', address: '' },
+    personal: { 
+      firstName: '', 
+      lastName: '', 
+      fullName: '',
+      aliases: '',
+      passport: '',
+      nic: '', 
+      height: '',
+      religion: '',
+      gender: '',
+      dateOfBirth: '',
+      address: '' 
+    },
+    gangDetails: [],
     bank: { accountNumber: '', bankName: '', branch: '', balance: 0 },
     family: [],
     vehicles: [],
@@ -101,7 +116,14 @@ export default function App() {
         personal: {
           firstName: data.personal.first_name || '',
           lastName: data.personal.last_name || '',
+          fullName: data.personal.full_name || '',
+          aliases: data.personal.aliases || '',
+          passport: data.personal.passport || '',
           nic: data.personal.nic || '',
+          height: data.personal.height || '',
+          religion: data.personal.religion || '',
+          gender: data.personal.gender || '',
+          dateOfBirth: data.personal.date_of_birth ? data.personal.date_of_birth.split('T')[0] : '',
           address: data.personal.address || ''
         },
         bank: data.bank ? {
@@ -199,7 +221,14 @@ export default function App() {
             console.log('Processed intendedToBuy properties:', intendedProps);
             return intendedProps;
           })()
-        }
+        },
+        gangDetails: data.gangDetails ? data.gangDetails.map(g => ({
+          gangName: g.gang_name || '',
+          position: g.position_in_gang || '',
+          fromDate: g.from_date ? g.from_date.split('T')[0] : '',
+          toDate: g.to_date ? g.to_date.split('T')[0] : '',
+          currentlyActive: g.currently_active || false
+        })) : []
       });
       setIsEditing(false);
     } catch (error) {
@@ -355,6 +384,36 @@ export default function App() {
     setFormData(prev => ({
       ...prev,
       personal: { ...prev.personal, [field]: value }
+    }));
+  };
+
+  // Gang details handlers
+  const addGangDetail = () => {
+    setFormData(prev => ({
+      ...prev,
+      gangDetails: [...prev.gangDetails, { 
+        gangName: '', 
+        position: '', 
+        fromDate: '', 
+        toDate: '', 
+        currentlyActive: false 
+      }]
+    }));
+  };
+
+  const updateGangDetail = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      gangDetails: prev.gangDetails.map((gang, i) => 
+        i === index ? { ...gang, [field]: value } : gang
+      )
+    }));
+  };
+
+  const removeGangDetail = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      gangDetails: prev.gangDetails.filter((_, i) => i !== index)
     }));
   };
 
@@ -833,43 +892,320 @@ export default function App() {
           </h2>
 
           {activeSection === 'personal' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>First Name</label>
-                <input
-                  type="text"
-                  value={formData.personal.firstName}
-                  onChange={(e) => updatePersonalField('firstName', e.target.value)}
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
-                />
+            <div>
+              {/* Personal Details Tabs */}
+              <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '2px solid #e9ecef' }}>
+                <button
+                  onClick={() => setActivePersonalTab('basicInfo')}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: activePersonalTab === 'basicInfo' ? '#3498db' : '#f8f9fa',
+                    color: activePersonalTab === 'basicInfo' ? 'white' : '#2c3e50',
+                    border: 'none',
+                    borderRadius: '5px 5px 0 0',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    marginRight: '5px'
+                  }}
+                >
+                  Basic Information
+                </button>
+                <button
+                  onClick={() => setActivePersonalTab('gangDetails')}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: activePersonalTab === 'gangDetails' ? '#e74c3c' : '#f8f9fa',
+                    color: activePersonalTab === 'gangDetails' ? 'white' : '#2c3e50',
+                    border: 'none',
+                    borderRadius: '5px 5px 0 0',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  Gang Details
+                </button>
               </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Last Name</label>
-                <input
-                  type="text"
-                  value={formData.personal.lastName}
-                  onChange={(e) => updatePersonalField('lastName', e.target.value)}
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>NIC Number</label>
-                <input
-                  type="text"
-                  value={formData.personal.nic}
-                  onChange={(e) => updatePersonalField('nic', e.target.value)}
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Address</label>
-                <textarea
-                  value={formData.personal.address}
-                  onChange={(e) => updatePersonalField('address', e.target.value)}
-                  rows="3"
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
-                />
-              </div>
+
+              {/* Basic Information Section */}
+              {activePersonalTab === 'basicInfo' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>First Name *</label>
+                    <input
+                      type="text"
+                      value={formData.personal.firstName}
+                      onChange={(e) => updatePersonalField('firstName', e.target.value)}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Last Name *</label>
+                    <input
+                      type="text"
+                      value={formData.personal.lastName}
+                      onChange={(e) => updatePersonalField('lastName', e.target.value)}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Full Name</label>
+                    <input
+                      type="text"
+                      value={formData.personal.fullName}
+                      onChange={(e) => updatePersonalField('fullName', e.target.value)}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                      placeholder="Complete full name"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Aliases</label>
+                    <input
+                      type="text"
+                      value={formData.personal.aliases}
+                      onChange={(e) => updatePersonalField('aliases', e.target.value)}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                      placeholder="Known aliases (comma separated)"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>NIC Number *</label>
+                    <input
+                      type="text"
+                      value={formData.personal.nic}
+                      onChange={(e) => updatePersonalField('nic', e.target.value)}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Passport Number</label>
+                    <input
+                      type="text"
+                      value={formData.personal.passport}
+                      onChange={(e) => updatePersonalField('passport', e.target.value)}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Gender</label>
+                    <select
+                      value={formData.personal.gender}
+                      onChange={(e) => updatePersonalField('gender', e.target.value)}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                    >
+                      <option value="">Select Gender</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Date of Birth</label>
+                    <input
+                      type="date"
+                      value={formData.personal.dateOfBirth}
+                      onChange={(e) => updatePersonalField('dateOfBirth', e.target.value)}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Height (cm)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formData.personal.height}
+                      onChange={(e) => updatePersonalField('height', e.target.value)}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                      placeholder="Height in centimeters"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Religion</label>
+                    <input
+                      type="text"
+                      value={formData.personal.religion}
+                      onChange={(e) => updatePersonalField('religion', e.target.value)}
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                    />
+                  </div>
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Address</label>
+                    <textarea
+                      value={formData.personal.address}
+                      onChange={(e) => updatePersonalField('address', e.target.value)}
+                      rows="3"
+                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Gang Details Section */}
+              {activePersonalTab === 'gangDetails' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                    <h3 style={{ color: '#e74c3c', margin: 0 }}>Gang Affiliations</h3>
+                    <button
+                      onClick={addGangDetail}
+                      style={{
+                        padding: '10px 20px',
+                        backgroundColor: '#e74c3c',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      + Add Gang Detail
+                    </button>
+                  </div>
+
+                  {formData.gangDetails.length === 0 && (
+                    <div style={{
+                      padding: '40px',
+                      textAlign: 'center',
+                      backgroundColor: '#fff5f5',
+                      borderRadius: '8px',
+                      border: '2px dashed #f5c6cb',
+                      color: '#6c757d'
+                    }}>
+                      <h4 style={{ margin: '0 0 10px 0' }}>No Gang Details</h4>
+                      <p style={{ margin: 0 }}>Click "Add Gang Detail" to start recording gang affiliations</p>
+                    </div>
+                  )}
+
+                  {formData.gangDetails.map((gang, index) => (
+                    <div key={index} style={{
+                      marginBottom: '25px',
+                      padding: '20px',
+                      backgroundColor: '#fff5f5',
+                      borderRadius: '8px',
+                      border: '1px solid #f5c6cb'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                        <h4 style={{ margin: 0, color: '#e74c3c' }}>
+                          Gang Detail {index + 1}
+                        </h4>
+                        <button
+                          onClick={() => removeGangDetail(index)}
+                          style={{
+                            padding: '8px 12px',
+                            backgroundColor: '#dc3545',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Gang Name *
+                          </label>
+                          <input
+                            type="text"
+                            value={gang.gangName}
+                            onChange={(e) => updateGangDetail(index, 'gangName', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            Position in Gang *
+                          </label>
+                          <input
+                            type="text"
+                            value={gang.position}
+                            onChange={(e) => updateGangDetail(index, 'position', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                            placeholder="Leader, Member, Lieutenant, etc."
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            From Date *
+                          </label>
+                          <input
+                            type="date"
+                            value={gang.fromDate}
+                            onChange={(e) => updateGangDetail(index, 'fromDate', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                            To Date
+                          </label>
+                          <input
+                            type="date"
+                            value={gang.toDate}
+                            onChange={(e) => updateGangDetail(index, 'toDate', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '10px',
+                              border: '1px solid #ddd',
+                              borderRadius: '5px',
+                              fontSize: '14px'
+                            }}
+                            disabled={gang.currentlyActive}
+                          />
+                        </div>
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+                            <input
+                              type="checkbox"
+                              id={`currently-active-${index}`}
+                              checked={gang.currentlyActive}
+                              onChange={(e) => {
+                                updateGangDetail(index, 'currentlyActive', e.target.checked);
+                                if (e.target.checked) {
+                                  updateGangDetail(index, 'toDate', '');
+                                }
+                              }}
+                              style={{ marginRight: '5px' }}
+                            />
+                            <label htmlFor={`currently-active-${index}`} style={{ fontWeight: 'bold', color: '#e74c3c' }}>
+                              Currently Active in Gang
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
