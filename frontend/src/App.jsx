@@ -2084,6 +2084,105 @@ export default function App() {
 
           {activeSection === 'properties' && (
             <div>
+              {/* Saved Properties List Section */}
+              {(() => {
+                const allProperties = [
+                  ...formData.properties.currentlyInPossession.map(p => ({ ...p, section: 'currentlyInPossession', sectionName: 'Currently in Possession' })),
+                  ...formData.properties.sold.map(p => ({ ...p, section: 'sold', sectionName: 'Sold' })),
+                  ...formData.properties.intendedToBuy.map(p => ({ ...p, section: 'intendedToBuy', sectionName: 'Intended to Buy' }))
+                ];
+                
+                return allProperties.length > 0 && (
+                  <div style={{ 
+                    marginBottom: '30px', 
+                    padding: '20px', 
+                    backgroundColor: '#f8f9fa', 
+                    borderRadius: '8px',
+                    border: '1px solid #dee2e6'
+                  }}>
+                    <h3 style={{ color: '#2c3e50', marginBottom: '15px', display: 'flex', alignItems: 'center' }}>
+                      📋 Saved Properties ({allProperties.length})
+                    </h3>
+                    <div style={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
+                      gap: '15px' 
+                    }}>
+                      {allProperties.map((property, index) => (
+                        <div
+                          key={index}
+                          onClick={() => {
+                            setActivePropertiesTab(property.section);
+                            // Scroll to the property section after a brief delay
+                            setTimeout(() => {
+                              const element = document.querySelector(`[data-property-section="${property.section}"]`);
+                              if (element) {
+                                element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }
+                            }, 100);
+                          }}
+                          style={{
+                            padding: '15px',
+                            backgroundColor: 'white',
+                            borderRadius: '6px',
+                            border: '1px solid #ddd',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = 'translateY(-2px)';
+                            e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <h4 style={{ margin: 0, color: '#2c3e50', fontSize: '16px' }}>
+                              {property.propertyType || 'Property'}
+                            </h4>
+                            <span style={{ 
+                              fontSize: '11px', 
+                              padding: '2px 8px', 
+                              borderRadius: '12px',
+                              backgroundColor: property.section === 'currentlyInPossession' ? '#27ae60' : 
+                                             property.section === 'sold' ? '#e74c3c' : '#f39c12',
+                              color: 'white',
+                              fontWeight: 'bold'
+                            }}>
+                              {property.sectionName.toUpperCase()}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '14px', color: '#6c757d', marginBottom: '5px' }}>
+                            <strong>Value:</strong> LKR {property.value ? Number(property.value).toLocaleString() : 'N/A'}
+                          </div>
+                          {property.location && (
+                            <div style={{ fontSize: '14px', color: '#6c757d', marginBottom: '5px' }}>
+                              <strong>Location:</strong> {property.location}
+                            </div>
+                          )}
+                          {property.description && (
+                            <div style={{ fontSize: '14px', color: '#6c757d', marginBottom: '5px' }}>
+                              <strong>Description:</strong> {property.description.length > 50 ? property.description.substring(0, 50) + '...' : property.description}
+                            </div>
+                          )}
+                          {property.documents && (
+                            <div style={{ fontSize: '12px', color: '#007bff', marginTop: '8px' }}>
+                              📎 Document attached
+                            </div>
+                          )}
+                          <div style={{ fontSize: '12px', color: '#28a745', marginTop: '8px', fontWeight: 'bold' }}>
+                            🖱️ Click to view details
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Properties Tabs */}
               <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '2px solid #e9ecef' }}>
                 {['currentlyInPossession', 'sold', 'intendedToBuy'].map((section) => (
@@ -2110,7 +2209,7 @@ export default function App() {
 
               {/* Currently in Possession Section */}
               {activePropertiesTab === 'currentlyInPossession' && (
-                <div>
+                <div data-property-section="currentlyInPossession">
                   <h3 style={{ color: '#27ae60', marginBottom: '15px' }}>Currently in Possession</h3>
                   <button
                     onClick={() => addProperty('currentlyInPossession')}
@@ -2311,7 +2410,7 @@ export default function App() {
 
               {/* Sold Section */}
               {activePropertiesTab === 'sold' && (
-                <div>
+                <div data-property-section="sold">
                   <h3 style={{ color: '#e74c3c', marginBottom: '15px' }}>Sold Properties</h3>
                   <button
                     onClick={() => addProperty('sold')}
@@ -2596,7 +2695,7 @@ export default function App() {
 
               {/* Intended to Buy Section */}
               {activePropertiesTab === 'intendedToBuy' && (
-                <div>
+                <div data-property-section="intendedToBuy">
                   <h3 style={{ color: '#f39c12', marginBottom: '15px' }}>Intended to Buy</h3>
                   {console.log('Rendering intendedToBuy section. Properties:', formData.properties.intendedToBuy)}
                   <button
