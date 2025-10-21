@@ -219,6 +219,48 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
     );
     console.log('Properties query result for person', id, ':', propertiesResult.rows.length, 'properties found');
 
+    // Get social media
+    const socialMediaResult = await pool.query(
+      'SELECT * FROM social_media WHERE person_id = $1 ORDER BY created_at DESC',
+      [id]
+    );
+
+    // Get occupations
+    const occupationsResult = await pool.query(
+      'SELECT * FROM occupations WHERE person_id = $1 ORDER BY from_date DESC',
+      [id]
+    );
+
+    // Get lawyers
+    const lawyersResult = await pool.query(
+      'SELECT * FROM lawyers WHERE person_id = $1 ORDER BY created_at DESC',
+      [id]
+    );
+
+    // Get court cases
+    const courtCasesResult = await pool.query(
+      'SELECT * FROM court_cases WHERE person_id = $1 ORDER BY created_at DESC',
+      [id]
+    );
+
+    // Get active areas
+    const activeAreasResult = await pool.query(
+      'SELECT * FROM active_areas WHERE person_id = $1 ORDER BY created_at DESC',
+      [id]
+    );
+
+    // Get relatives officials
+    const relativesOfficialsResult = await pool.query(
+      'SELECT * FROM relatives_officials WHERE person_id = $1 ORDER BY created_at DESC',
+      [id]
+    );
+
+    // Get bank details
+    const bankDetailsResult = await pool.query(
+      'SELECT * FROM bank_details WHERE person_id = $1 ORDER BY created_at DESC',
+      [id]
+    );
+
     // Format response to match frontend expectations
     const response = {
       id: personResult.rows[0].id,
@@ -343,6 +385,70 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         department: official.department,
         corruption_type: official.corruption_type,
         notes: official.notes
+      })),
+      socialMedia: socialMediaResult.rows.map(social => ({
+        id: social.id,
+        platform: social.platform,
+        url: social.url,
+        username: social.username,
+        password: social.password
+      })),
+      occupations: occupationsResult.rows.map(occupation => ({
+        id: occupation.id,
+        job_title: occupation.job_title,
+        company: occupation.company,
+        from_date: occupation.from_date,
+        to_date: occupation.to_date,
+        currently_active: occupation.currently_active
+      })),
+      lawyers: lawyersResult.rows.map(lawyer => ({
+        id: lawyer.id,
+        lawyer_full_name: lawyer.lawyer_full_name,
+        law_firm_or_company: lawyer.law_firm_or_company,
+        phone_number: lawyer.phone_number
+      })),
+      courtCases: courtCasesResult.rows.map(courtCase => ({
+        id: courtCase.id,
+        case_number: courtCase.case_number,
+        courts: courtCase.courts,
+        description: courtCase.description
+      })),
+      activeAreas: activeAreasResult.rows.map(activeArea => ({
+        id: activeArea.id,
+        town: activeArea.town,
+        district: activeArea.district,
+        province: activeArea.province,
+        from_date: activeArea.from_date,
+        to_date: activeArea.to_date,
+        is_active: activeArea.is_active,
+        address_selection: activeArea.address_selection
+      })),
+      relativesOfficials: relativesOfficialsResult.rows.map(relativesOfficial => ({
+        id: relativesOfficial.id,
+        full_name: relativesOfficial.full_name,
+        nic_number: relativesOfficial.nic_number,
+        passport_number: relativesOfficial.passport_number,
+        department: relativesOfficial.department,
+        description: relativesOfficial.description
+      })),
+      bankDetails: bankDetailsResult.rows.map(bankDetail => ({
+        id: bankDetail.id,
+        account_type: bankDetail.account_type,
+        bank_name: bankDetail.bank_name,
+        account_number: bankDetail.account_number,
+        account_holder_name: bankDetail.account_holder_name,
+        branch: bankDetail.branch,
+        swift_code: bankDetail.swift_code,
+        routing_number: bankDetail.routing_number,
+        balance: bankDetail.balance,
+        interest_rate: bankDetail.interest_rate,
+        card_number: bankDetail.card_number,
+        expiry_date: bankDetail.expiry_date,
+        cvv: bankDetail.cvv,
+        credit_limit: bankDetail.credit_limit,
+        loan_amount: bankDetail.loan_amount,
+        loan_term: bankDetail.loan_term,
+        monthly_payment: bankDetail.monthly_payment
       }))
     };
     
@@ -362,6 +468,24 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
     
     await client.query('BEGIN');
     
+    // Format address - handle both string and object formats
+    let addressString = '';
+    if (typeof personal.address === 'object' && personal.address !== null) {
+      const addr = personal.address;
+      addressString = [
+        addr.number,
+        addr.street1,
+        addr.street2,
+        addr.town,
+        addr.district,
+        addr.province,
+        addr.policeArea,
+        addr.policeDivision
+      ].filter(Boolean).join(', ');
+    } else {
+      addressString = personal.address || '';
+    }
+
     // Insert person
     const personResult = await client.query(
       `INSERT INTO people (first_name, last_name, full_name, aliases, passport, nic, height, religion, gender, date_of_birth, address) 
@@ -377,7 +501,7 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
         personal.religion,
         personal.gender,
         personal.dateOfBirth || null,
-        personal.address
+        addressString
       ]
     );
     
@@ -501,6 +625,83 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
         );
       }
     }
+
+    // Insert social media if provided
+    if (req.body.socialMedia && req.body.socialMedia.length > 0) {
+      for (const social of req.body.socialMedia) {
+        await client.query(
+          `INSERT INTO social_media (person_id, platform, url, username, password)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [personId, social.platform, social.url || null, social.username || null, social.password || null]
+        );
+      }
+    }
+
+    // Insert occupations if provided
+    if (req.body.occupations && req.body.occupations.length > 0) {
+      for (const occupation of req.body.occupations) {
+        await client.query(
+          `INSERT INTO occupations (person_id, job_title, company, from_date, to_date, currently_active)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [personId, occupation.jobTitle, occupation.company, occupation.fromDate || null, occupation.toDate || null, occupation.currently || false]
+        );
+      }
+    }
+
+    // Insert lawyers if provided
+    if (req.body.lawyers && req.body.lawyers.length > 0) {
+      for (const lawyer of req.body.lawyers) {
+        await client.query(
+          `INSERT INTO lawyers (person_id, lawyer_full_name, law_firm_or_company, phone_number)
+           VALUES ($1, $2, $3, $4)`,
+          [personId, lawyer.lawyerFullName, lawyer.lawFirmOrCompany, lawyer.phoneNumber]
+        );
+      }
+    }
+
+    // Insert court cases if provided
+    if (req.body.courtCases && req.body.courtCases.length > 0) {
+      for (const courtCase of req.body.courtCases) {
+        await client.query(
+          `INSERT INTO court_cases (person_id, case_number, courts, description)
+           VALUES ($1, $2, $3, $4)`,
+          [personId, courtCase.caseNumber, courtCase.courts, courtCase.description]
+        );
+      }
+    }
+
+    // Insert active areas if provided
+    if (req.body.activeAreas && req.body.activeAreas.length > 0) {
+      for (const activeArea of req.body.activeAreas) {
+        await client.query(
+          `INSERT INTO active_areas (person_id, town, district, province, from_date, to_date, is_active, address_selection)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [personId, activeArea.town, activeArea.district, activeArea.province, activeArea.fromDate, activeArea.toDate, activeArea.isActive || false, activeArea.addressSelection]
+        );
+      }
+    }
+
+    // Insert relatives officials if provided
+    if (req.body.relativesOfficials && req.body.relativesOfficials.length > 0) {
+      for (const relativesOfficial of req.body.relativesOfficials) {
+        await client.query(
+          `INSERT INTO relatives_officials (person_id, full_name, nic_number, passport_number, department, description)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [personId, relativesOfficial.fullName, relativesOfficial.nicNumber, relativesOfficial.passportNumber, relativesOfficial.department, relativesOfficial.description]
+        );
+      }
+    }
+
+    // Insert bank details if provided
+    if (req.body.bankDetails && req.body.bankDetails.length > 0) {
+      for (const bankDetail of req.body.bankDetails) {
+        await client.query(
+          `INSERT INTO bank_details (person_id, account_type, bank_name, account_number, account_holder_name, branch, swift_code, routing_number, balance, interest_rate, card_number, expiry_date, cvv, credit_limit, loan_amount, loan_term, monthly_payment)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+          [personId, bankDetail.accountType, bankDetail.bankName, bankDetail.accountNumber, bankDetail.accountHolderName, bankDetail.branch, bankDetail.swiftCode, bankDetail.routingNumber, bankDetail.balance, bankDetail.interestRate, bankDetail.cardNumber, bankDetail.expiryDate, bankDetail.cvv, bankDetail.creditLimit, bankDetail.loanAmount, bankDetail.loanTerm, bankDetail.monthlyPayment]
+        );
+      }
+    }
     
     await client.query('COMMIT');
     res.json({ id: personId, message: 'Person created successfully' });
@@ -531,6 +732,24 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     
     await client.query('BEGIN');
     
+    // Format address - handle both string and object formats
+    let addressString = '';
+    if (typeof personal.address === 'object' && personal.address !== null) {
+      const addr = personal.address;
+      addressString = [
+        addr.number,
+        addr.street1,
+        addr.street2,
+        addr.town,
+        addr.district,
+        addr.province,
+        addr.policeArea,
+        addr.policeDivision
+      ].filter(Boolean).join(', ');
+    } else {
+      addressString = personal.address || '';
+    }
+
     // Update person
     await client.query(
       `UPDATE people 
@@ -549,7 +768,7 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
         personal.religion,
         personal.gender,
         personal.dateOfBirth || null,
-        personal.address, 
+        addressString, 
         id
       ]
     );
@@ -589,6 +808,13 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     await client.query('DELETE FROM used_weapons WHERE person_id = $1', [id]);
     await client.query('DELETE FROM second_phone WHERE person_id = $1', [id]);
     await client.query('DELETE FROM properties WHERE person_id = $1', [id]);
+    await client.query('DELETE FROM social_media WHERE person_id = $1', [id]);
+    await client.query('DELETE FROM occupations WHERE person_id = $1', [id]);
+    await client.query('DELETE FROM lawyers WHERE person_id = $1', [id]);
+    await client.query('DELETE FROM court_cases WHERE person_id = $1', [id]);
+    await client.query('DELETE FROM active_areas WHERE person_id = $1', [id]);
+    await client.query('DELETE FROM relatives_officials WHERE person_id = $1', [id]);
+    await client.query('DELETE FROM bank_details WHERE person_id = $1', [id]);
     
     // Re-insert all data
     if (family && family.length > 0) {
@@ -687,6 +913,90 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
       }
     } else {
       console.log('No properties to insert for person', id);
+    }
+
+    // Insert social media if provided
+    if (req.body.socialMedia && req.body.socialMedia.length > 0) {
+      console.log('Inserting', req.body.socialMedia.length, 'social media entries for person', id);
+      for (const social of req.body.socialMedia) {
+        await client.query(
+          `INSERT INTO social_media (person_id, platform, url, username, password)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [id, social.platform, social.url || null, social.username || null, social.password || null]
+        );
+      }
+    }
+
+    // Insert occupations if provided
+    if (req.body.occupations && req.body.occupations.length > 0) {
+      console.log('Inserting', req.body.occupations.length, 'occupations for person', id);
+      for (const occupation of req.body.occupations) {
+        await client.query(
+          `INSERT INTO occupations (person_id, job_title, company, from_date, to_date, currently_active)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [id, occupation.jobTitle, occupation.company, occupation.fromDate || null, occupation.toDate || null, occupation.currently || false]
+        );
+      }
+    }
+
+    // Insert lawyers if provided
+    if (req.body.lawyers && req.body.lawyers.length > 0) {
+      console.log('Inserting', req.body.lawyers.length, 'lawyers for person', id);
+      for (const lawyer of req.body.lawyers) {
+        await client.query(
+          `INSERT INTO lawyers (person_id, lawyer_full_name, law_firm_or_company, phone_number)
+           VALUES ($1, $2, $3, $4)`,
+          [id, lawyer.lawyerFullName, lawyer.lawFirmOrCompany, lawyer.phoneNumber]
+        );
+      }
+    }
+
+    // Insert court cases if provided
+    if (req.body.courtCases && req.body.courtCases.length > 0) {
+      console.log('Inserting', req.body.courtCases.length, 'court cases for person', id);
+      for (const courtCase of req.body.courtCases) {
+        await client.query(
+          `INSERT INTO court_cases (person_id, case_number, courts, description)
+           VALUES ($1, $2, $3, $4)`,
+          [id, courtCase.caseNumber, courtCase.courts, courtCase.description]
+        );
+      }
+    }
+
+    // Insert active areas if provided
+    if (req.body.activeAreas && req.body.activeAreas.length > 0) {
+      console.log('Inserting', req.body.activeAreas.length, 'active areas for person', id);
+      for (const activeArea of req.body.activeAreas) {
+        await client.query(
+          `INSERT INTO active_areas (person_id, town, district, province, from_date, to_date, is_active, address_selection)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [id, activeArea.town, activeArea.district, activeArea.province, activeArea.fromDate, activeArea.toDate, activeArea.isActive || false, activeArea.addressSelection]
+        );
+      }
+    }
+
+    // Insert relatives officials if provided
+    if (req.body.relativesOfficials && req.body.relativesOfficials.length > 0) {
+      console.log('Inserting', req.body.relativesOfficials.length, 'relatives officials for person', id);
+      for (const relativesOfficial of req.body.relativesOfficials) {
+        await client.query(
+          `INSERT INTO relatives_officials (person_id, full_name, nic_number, passport_number, department, description)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [id, relativesOfficial.fullName, relativesOfficial.nicNumber, relativesOfficial.passportNumber, relativesOfficial.department, relativesOfficial.description]
+        );
+      }
+    }
+
+    // Insert bank details if provided
+    if (req.body.bankDetails && req.body.bankDetails.length > 0) {
+      console.log('Inserting', req.body.bankDetails.length, 'bank details for person', id);
+      for (const bankDetail of req.body.bankDetails) {
+        await client.query(
+          `INSERT INTO bank_details (person_id, account_type, bank_name, account_number, account_holder_name, branch, swift_code, routing_number, balance, interest_rate, card_number, expiry_date, cvv, credit_limit, loan_amount, loan_term, monthly_payment)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+          [id, bankDetail.accountType, bankDetail.bankName, bankDetail.accountNumber, bankDetail.accountHolderName, bankDetail.branch, bankDetail.swiftCode, bankDetail.routingNumber, bankDetail.balance, bankDetail.interestRate, bankDetail.cardNumber, bankDetail.expiryDate, bankDetail.cvv, bankDetail.creditLimit, bankDetail.loanAmount, bankDetail.loanTerm, bankDetail.monthlyPayment]
+        );
+      }
     }
     
     await client.query('COMMIT');

@@ -27,8 +27,25 @@ export default function App() {
       religion: '',
       gender: '',
       dateOfBirth: '',
-      address: '' 
+      // structured address
+      address: {
+        number: '',
+        street1: '',
+        street2: '',
+        town: '',
+        district: '',
+        province: '',
+        policeArea: '',
+        policeDivision: ''
+      }
     },
+    socialMedia: [], // {platform, url, username, password}
+    occupations: [], // {jobTitle, company, fromDate, toDate, currently}
+    lawyers: [], // {lawyerFullName, lawFirmOrCompany, phoneNumber}
+    courtCases: [], // {caseNumber, courts, description}
+    activeAreas: [], // {town, district, province, fromDate, toDate, isActive, addressSelection}
+    relativesOfficials: [], // {fullName, nicNumber, passportNumber, department, description}
+    bankDetails: [], // {accountType, bankName, accountNumber, accountHolderName, branch, swiftCode, routingNumber, balance, interestRate, cardNumber, expiryDate, cvv, creditLimit, loanAmount, loanTerm, monthlyPayment}
     gangDetails: [],
     bank: { accountNumber: '', bankName: '', branch: '', balance: 0 },
     family: [],
@@ -50,6 +67,19 @@ export default function App() {
     corruptedOfficials: []
   });
 
+  // Province -> District mapping
+  const provinceDistricts = {
+    'Western Province': ['Colombo','Gampaha','Kalutara'],
+    'Central Province': ['Kandy','Matale','Nuwara Eliya'],
+    'Southern Province': ['Galle','Matara','Hambantota'],
+    'Northern Province': ['Jaffna','Kilinochchi','Mannar','Vavuniya','Mullaitivu'],
+    'Eastern Province': ['Trincomalee','Batticaloa','Ampara'],
+    'North Western Province': ['Kurunegala','Puttalam'],
+    'North Central Province': ['Anuradhapura','Polonnaruwa'],
+    'Uva Province': ['Badulla','Monaragala'],
+    'Sabaragamuwa Province': ['Ratnapura','Kegalle']
+  };
+
   // Family relationship options
   const familyRelationships = [
     { category: 'Immediate Family', options: ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife'] },
@@ -70,6 +100,193 @@ export default function App() {
   const validatePhoneNumber = (value) => {
     // Remove spaces and hyphens from input
     return value.replace(/[\s-]/g, '');
+  };
+
+  // Navigation through sections (next/previous)
+  // Organize sections into pages - Phone is last section on page 1
+  const sectionPages = [
+    // Page 1: Core sections up to Phone
+    ['personal','bank','family','vehicles','bodyMarks','usedDevices','callHistory','weapons','phone'],
+    // Page 2: Extended sections
+    ['properties','enemies','corruptedOfficials','socialMedia','occupation'],
+    // Page 3: Legal and financial sections
+    ['lawyers','courtCases','activeAreas','relativesOfficials','bankDetails']
+  ];
+  
+  const orderedSections = sectionPages.flat(); // Keep for compatibility
+  const [currentSidebarPage, setCurrentSidebarPage] = useState(0);
+  
+  // Get sections for current sidebar page
+  const getCurrentPageSections = () => sectionPages[currentSidebarPage] || [];
+  
+  // Find which page contains a section
+  const getPageForSection = (section) => {
+    return sectionPages.findIndex(page => page.includes(section));
+  };
+  
+  // Navigate to next sidebar page
+  const goToNextSidebarPage = () => {
+    if (currentSidebarPage < sectionPages.length - 1) {
+      setCurrentSidebarPage(currentSidebarPage + 1);
+      // Auto-select first section of next page
+      setActiveSection(sectionPages[currentSidebarPage + 1][0]);
+    }
+  };
+  
+  // Navigate to previous sidebar page
+  const goToPreviousSidebarPage = () => {
+    if (currentSidebarPage > 0) {
+      setCurrentSidebarPage(currentSidebarPage - 1);
+      // Auto-select first section of previous page
+      setActiveSection(sectionPages[currentSidebarPage - 1][0]);
+    }
+  };
+  
+  // Update active section and ensure correct page is shown
+  const setActiveSectionAndPage = (section) => {
+    const pageIndex = getPageForSection(section);
+    if (pageIndex !== -1 && pageIndex !== currentSidebarPage) {
+      setCurrentSidebarPage(pageIndex);
+    }
+    setActiveSection(section);
+  };
+
+  const goToNextSection = () => {
+    const currentPageSections = getCurrentPageSections();
+    const currentSectionIndex = currentPageSections.indexOf(activeSection);
+    
+    if (currentSectionIndex >= 0 && currentSectionIndex < currentPageSections.length - 1) {
+      // Next section on same page
+      setActiveSection(currentPageSections[currentSectionIndex + 1]);
+    } else if (currentSidebarPage < sectionPages.length - 1) {
+      // Move to first section of next page
+      goToNextSidebarPage();
+    }
+  };
+
+  const goToPreviousSection = () => {
+    const currentPageSections = getCurrentPageSections();
+    const currentSectionIndex = currentPageSections.indexOf(activeSection);
+    
+    if (currentSectionIndex > 0) {
+      // Previous section on same page
+      setActiveSection(currentPageSections[currentSectionIndex - 1]);
+    } else if (currentSidebarPage > 0) {
+      // Move to last section of previous page
+      const previousPage = currentSidebarPage - 1;
+      setCurrentSidebarPage(previousPage);
+      const previousPageSections = sectionPages[previousPage];
+      setActiveSection(previousPageSections[previousPageSections.length - 1]);
+    }
+  };
+
+  // Address field update (structured)
+  const updateAddressField = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      personal: {
+        ...prev.personal,
+        address: { ...prev.personal.address, [field]: value }
+      }
+    }));
+  };
+
+  // Social media handlers
+  const addSocialMedia = () => {
+    setFormData(prev => ({ ...prev, socialMedia: [...(prev.socialMedia||[]), { platform: '', url: '', username: '', password: '' }] }));
+  };
+  const updateSocialMedia = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      socialMedia: prev.socialMedia.map((s, i) => i === index ? { ...s, [field]: value } : s)
+    }));
+  };
+  const removeSocialMedia = (index) => {
+    setFormData(prev => ({ ...prev, socialMedia: prev.socialMedia.filter((_, i) => i !== index) }));
+  };
+
+  // Occupation handlers
+  const addOccupation = () => {
+    setFormData(prev => ({ ...prev, occupations: [...(prev.occupations||[]), { jobTitle: '', company: '', fromDate: '', toDate: '', currently: false }] }));
+  };
+  const updateOccupation = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      occupations: prev.occupations.map((o, i) => i === index ? { ...o, [field]: value } : o)
+    }));
+  };
+  const removeOccupation = (index) => {
+    setFormData(prev => ({ ...prev, occupations: prev.occupations.filter((_, i) => i !== index) }));
+  };
+
+  // Lawyers handlers
+  const addLawyer = () => {
+    setFormData(prev => ({ ...prev, lawyers: [...(prev.lawyers||[]), { lawyerFullName: '', lawFirmOrCompany: '', phoneNumber: '' }] }));
+  };
+  const updateLawyer = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      lawyers: prev.lawyers.map((lawyer, i) => i === index ? { ...lawyer, [field]: value } : lawyer)
+    }));
+  };
+  const removeLawyer = (index) => {
+    setFormData(prev => ({ ...prev, lawyers: prev.lawyers.filter((_, i) => i !== index) }));
+  };
+
+  // Court Cases handlers
+  const addCourtCase = () => {
+    setFormData(prev => ({ ...prev, courtCases: [...(prev.courtCases||[]), { caseNumber: '', courts: '', description: '' }] }));
+  };
+  const updateCourtCase = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      courtCases: prev.courtCases.map((courtCase, i) => i === index ? { ...courtCase, [field]: value } : courtCase)
+    }));
+  };
+  const removeCourtCase = (index) => {
+    setFormData(prev => ({ ...prev, courtCases: prev.courtCases.filter((_, i) => i !== index) }));
+  };
+
+  // Active Areas handlers
+  const addActiveArea = () => {
+    setFormData(prev => ({ ...prev, activeAreas: [...(prev.activeAreas||[]), { town: '', district: '', province: '', fromDate: '', toDate: '', isActive: false, addressSelection: '' }] }));
+  };
+  const updateActiveArea = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      activeAreas: prev.activeAreas.map((activeArea, i) => i === index ? { ...activeArea, [field]: value } : activeArea)
+    }));
+  };
+  const removeActiveArea = (index) => {
+    setFormData(prev => ({ ...prev, activeAreas: prev.activeAreas.filter((_, i) => i !== index) }));
+  };
+
+  // Relatives Officials handlers
+  const addRelativesOfficial = () => {
+    setFormData(prev => ({ ...prev, relativesOfficials: [...(prev.relativesOfficials||[]), { fullName: '', nicNumber: '', passportNumber: '', department: '', description: '' }] }));
+  };
+  const updateRelativesOfficial = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      relativesOfficials: prev.relativesOfficials.map((relativesOfficial, i) => i === index ? { ...relativesOfficial, [field]: value } : relativesOfficial)
+    }));
+  };
+  const removeRelativesOfficial = (index) => {
+    setFormData(prev => ({ ...prev, relativesOfficials: prev.relativesOfficials.filter((_, i) => i !== index) }));
+  };
+
+  // Bank Details handlers
+  const addBankDetail = () => {
+    setFormData(prev => ({ ...prev, bankDetails: [...(prev.bankDetails||[]), { accountType: '', bankName: '', accountNumber: '', accountHolderName: '', branch: '', swiftCode: '', routingNumber: '', balance: '', interestRate: '', cardNumber: '', expiryDate: '', cvv: '', creditLimit: '', loanAmount: '', loanTerm: '', monthlyPayment: '' }] }));
+  };
+  const updateBankDetail = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      bankDetails: prev.bankDetails.map((bankDetail, i) => i === index ? { ...bankDetail, [field]: value } : bankDetail)
+    }));
+  };
+  const removeBankDetail = (index) => {
+    setFormData(prev => ({ ...prev, bankDetails: prev.bankDetails.filter((_, i) => i !== index) }));
   };
 
   // Function to find contact name by phone number
@@ -132,7 +349,7 @@ export default function App() {
           religion: data.personal.religion || '',
           gender: data.personal.gender || '',
           dateOfBirth: data.personal.date_of_birth ? data.personal.date_of_birth.split('T')[0] : '',
-          address: data.personal.address || ''
+          address: data.personal.address || { number: '', street1: '', street2: '', town: '', district: '', province: '', policeArea: '', policeDivision: '' }
         },
         bank: data.bank ? {
           accountNumber: data.bank.account_number || '',
@@ -260,7 +477,14 @@ export default function App() {
           department: o.department || '',
           corruptionType: o.corruption_type || '',
           notes: o.notes || ''
-        })) : []
+        })) : [],
+        socialMedia: data.socialMedia || [],
+        occupations: data.occupations || [],
+        lawyers: data.lawyers || [],
+        courtCases: data.courtCases || [],
+        activeAreas: data.activeAreas || [],
+        relativesOfficials: data.relativesOfficials || [],
+        bankDetails: data.bankDetails || []
       });
       setIsEditing(false);
     } catch (error) {
@@ -273,7 +497,7 @@ export default function App() {
   const handleAddNew = () => {
     setSelectedPerson(null);
     setFormData({
-      personal: { firstName: '', lastName: '', nic: '', address: '' },
+      personal: { firstName: '', lastName: '', nic: '', address: { number: '', street1: '', street2: '', town: '', district: '', province: '', policeArea: '', policeDivision: '' } },
       bank: { accountNumber: '', bankName: '', branch: '', balance: 0 },
       family: [],
       vehicles: [],
@@ -282,6 +506,8 @@ export default function App() {
       callHistory: [],
       weapons: [],
       phones: [],
+      socialMedia: [],
+      occupations: [],
       properties: {
         currentlyInPossession: [],
         sold: [],
@@ -729,7 +955,6 @@ export default function App() {
       }
     }
   };
-
   // Image upload handler for body marks
   const handleImageUpload = (index, event) => {
     const file = event.target.files[0];
@@ -882,7 +1107,7 @@ export default function App() {
   return (
     <div style={{ display: 'flex', height: '100vh', fontFamily: 'Arial, sans-serif' }}>
       {/* LEFT PANEL */}
-      <div style={{ width: '250px', backgroundColor: '#2c3e50', color: 'white', padding: '20px' }}>
+      <div style={{ width: '250px', backgroundColor: '#2c3e50', color: 'white', padding: '20px', display: 'flex', flexDirection: 'column', height: '100vh' }}>
         <h2 style={{ marginBottom: '30px' }}>Dashboard</h2>
         <button
           onClick={handleAddNew}
@@ -900,176 +1125,107 @@ export default function App() {
         >
           + Add New Person
         </button>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {/* Page indicator */}
+        <div style={{ 
+          textAlign: 'center', 
+          marginBottom: '10px', 
+          fontSize: '12px', 
+          color: '#bdc3c7' 
+        }}>
+          Page {currentSidebarPage + 1} of {sectionPages.length}
+        </div>
+        
+        {/* Sidebar page navigation */}
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          marginBottom: '15px', 
+          gap: '5px' 
+        }}>
           <button
-            onClick={() => setActiveSection('personal')}
+            onClick={goToPreviousSidebarPage}
+            disabled={currentSidebarPage === 0}
             style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'personal' ? '#34495e' : 'transparent',
+              flex: 1,
+              padding: '8px',
+              backgroundColor: currentSidebarPage === 0 ? '#7f8c8d' : '#95a5a6',
               color: 'white',
               border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
+              borderRadius: '3px',
+              cursor: currentSidebarPage === 0 ? 'not-allowed' : 'pointer',
+              fontSize: '11px',
+              opacity: currentSidebarPage === 0 ? 0.5 : 1
             }}
           >
-            Personal Details
+            ← Prev Page
           </button>
           <button
-            onClick={() => setActiveSection('bank')}
+            onClick={goToNextSidebarPage}
+            disabled={currentSidebarPage === sectionPages.length - 1}
             style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'bank' ? '#34495e' : 'transparent',
+              flex: 1,
+              padding: '8px',
+              backgroundColor: currentSidebarPage === sectionPages.length - 1 ? '#7f8c8d' : '#95a5a6',
               color: 'white',
               border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
+              borderRadius: '3px',
+              cursor: currentSidebarPage === sectionPages.length - 1 ? 'not-allowed' : 'pointer',
+              fontSize: '11px',
+              opacity: currentSidebarPage === sectionPages.length - 1 ? 0.5 : 1
             }}
           >
-            Banking Details
-          </button>
-          <button
-            onClick={() => setActiveSection('family')}
-            style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'family' ? '#34495e' : 'transparent',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            Family & Friends
-          </button>
-          <button
-            onClick={() => setActiveSection('vehicles')}
-            style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'vehicles' ? '#34495e' : 'transparent',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            Vehicle Details
-          </button>
-          <button
-            onClick={() => setActiveSection('bodyMarks')}
-            style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'bodyMarks' ? '#34495e' : 'transparent',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            Body Marks
-          </button>
-          <button
-            onClick={() => setActiveSection('usedDevices')}
-            style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'usedDevices' ? '#34495e' : 'transparent',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            Used Devices
-          </button>
-          <button
-            onClick={() => setActiveSection('callHistory')}
-            style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'callHistory' ? '#34495e' : 'transparent',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            Call History
-          </button>
-          <button
-            onClick={() => setActiveSection('weapons')}
-            style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'weapons' ? '#34495e' : 'transparent',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            Used Weapons
-          </button>
-          <button
-            onClick={() => setActiveSection('phone')}
-            style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'phone' ? '#34495e' : 'transparent',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            Phone
-          </button>
-          <button
-            onClick={() => setActiveSection('properties')}
-            style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'properties' ? '#34495e' : 'transparent',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            Assets or Properties
-          </button>
-          <button
-            onClick={() => setActiveSection('enemies')}
-            style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'enemies' ? '#34495e' : 'transparent',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            Enemies
-          </button>
-          <button
-            onClick={() => setActiveSection('corruptedOfficials')}
-            style={{
-              padding: '12px',
-              backgroundColor: activeSection === 'corruptedOfficials' ? '#34495e' : 'transparent',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            Corrupted Officials
+            Next Page →
           </button>
         </div>
+
+        {/* Dynamic navigation sections for current page */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: '1' }}>
+          {getCurrentPageSections().map((section) => {
+            // Define section titles
+            const sectionTitles = {
+              personal: 'Personal Details',
+              bank: 'Banking Details', 
+              family: 'Family & Friends',
+              vehicles: 'Vehicle Details',
+              bodyMarks: 'Body Marks',
+              usedDevices: 'Used Devices',
+              callHistory: 'Call History',
+              weapons: 'Used Weapons',
+              phone: 'Phone',
+              properties: 'Assets or Properties',
+              enemies: 'Enemies',
+              corruptedOfficials: 'Corrupted Officials',
+              socialMedia: 'Social Media',
+              occupation: 'Occupation',
+              lawyers: 'Lawyers Details',
+              courtCases: 'Court Cases', 
+              activeAreas: 'Active Areas',
+              relativesOfficials: 'Relatives Officials',
+              bankDetails: 'Bank Details'
+            };
+
+            return (
+              <button
+                key={section}
+                onClick={() => setActiveSectionAndPage(section)}
+                style={{
+                  padding: '12px',
+                  backgroundColor: activeSection === section ? '#34495e' : 'transparent',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                {sectionTitles[section] || section}
+              </button>
+            );
+          })}
+        </div>
+        
+
       </div>
 
       {/* CENTER PANEL */}
@@ -1088,6 +1244,13 @@ export default function App() {
             {activeSection === 'properties' && 'ASSETS OR PROPERTIES Details'}
             {activeSection === 'enemies' && 'ENEMIES Details'}
             {activeSection === 'corruptedOfficials' && 'CORRUPTED OFFICIALS Details'}
+            {activeSection === 'socialMedia' && 'SOCIAL MEDIA Details'}
+            {activeSection === 'occupation' && 'OCCUPATION Details'}
+            {activeSection === 'lawyers' && 'LAWYERS Details'}
+            {activeSection === 'courtCases' && 'COURT CASES Details'}
+            {activeSection === 'activeAreas' && 'ACTIVE AREAS Details'}
+            {activeSection === 'relativesOfficials' && 'RELATIVES OFFICIALS Details'}
+            {activeSection === 'bankDetails' && 'BANK DETAILS'}
           </h2>
 
           {activeSection === 'personal' && (
@@ -1231,14 +1394,45 @@ export default function App() {
                       style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
                     />
                   </div>
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Address</label>
-                    <textarea
-                      value={formData.personal.address}
-                      onChange={(e) => updatePersonalField('address', e.target.value)}
-                      rows="3"
-                      style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
-                    />
+                  <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Number</label>
+                      <input type="text" value={formData.personal.address.number} onChange={(e) => updateAddressField('number', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Street Name 1</label>
+                      <input type="text" value={formData.personal.address.street1} onChange={(e) => updateAddressField('street1', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Street Name 2</label>
+                      <input type="text" value={formData.personal.address.street2} onChange={(e) => updateAddressField('street2', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Town</label>
+                      <input type="text" value={formData.personal.address.town} onChange={(e) => updateAddressField('town', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Province</label>
+                      <select value={formData.personal.address.province} onChange={(e) => { updateAddressField('province', e.target.value); updateAddressField('district', ''); }} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}>
+                        <option value="">Select Province</option>
+                        {Object.keys(provinceDistricts).map((p) => (<option key={p} value={p}>{p}</option>))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>District</label>
+                      <select value={formData.personal.address.district} onChange={(e) => updateAddressField('district', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}>
+                        <option value="">Select District</option>
+                        {(provinceDistricts[formData.personal.address.province] || []).map(d => (<option key={d} value={d}>{d}</option>))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Police Area</label>
+                      <input type="text" value={formData.personal.address.policeArea} onChange={(e) => updateAddressField('policeArea', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Police Division</label>
+                      <input type="text" value={formData.personal.address.policeDivision} onChange={(e) => updateAddressField('policeDivision', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
+                    </div>
                   </div>
                 </div>
               )}
@@ -3983,6 +4177,418 @@ export default function App() {
                         }}
                         placeholder="Additional notes about this corrupted official relationship"
                       />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* SOCIAL MEDIA SECTION */}
+          {activeSection === 'socialMedia' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ color: '#6f42c1', margin: 0 }}>Social Media</h3>
+                <button onClick={addSocialMedia} style={{ padding: '10px 20px', backgroundColor: '#6f42c1', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Social Media</button>
+              </div>
+
+              {(formData.socialMedia||[]).length === 0 && (
+                <div style={{ padding: '40px', textAlign: 'center', backgroundColor: '#f5f0ff', borderRadius: '8px', border: '2px dashed #e6d9ff', color: '#6c757d' }}>
+                  <h4 style={{ margin: '0 0 10px 0' }}>No Social Media Accounts</h4>
+                  <p style={{ margin: 0 }}>Click "Add Social Media" to record social profiles (facebook, instagram, twitter, snapchat, imo, other)</p>
+                </div>
+              )}
+
+              {(formData.socialMedia||[]).map((s, index) => (
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#faf5ff', borderRadius: '8px', border: '1px solid #efe5ff' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <strong>Account {index+1}</strong>
+                    <button onClick={() => removeSocialMedia(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Platform</label>
+                      <select value={s.platform} onChange={(e) => updateSocialMedia(index, 'platform', e.target.value)} style={{ width: '100%', padding: '8px' }}>
+                        <option value="">Select</option>
+                        <option>Facebook</option>
+                        <option>Instagram</option>
+                        <option>Twitter</option>
+                        <option>Snapchat</option>
+                        <option>IMO</option>
+                        <option>Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>URL</label>
+                      <input type="text" value={s.url} onChange={(e) => updateSocialMedia(index, 'url', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Username</label>
+                      <input type="text" value={s.username} onChange={(e) => updateSocialMedia(index, 'username', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Password</label>
+                      <input type="text" value={s.password} onChange={(e) => updateSocialMedia(index, 'password', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* OCCUPATION SECTION */}
+          {activeSection === 'occupation' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ color: '#20c997', margin: 0 }}>Occupation</h3>
+                <button onClick={addOccupation} style={{ padding: '10px 20px', backgroundColor: '#20c997', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Occupation</button>
+              </div>
+
+              {(formData.occupations||[]).length === 0 && (
+                <div style={{ padding: '40px', textAlign: 'center', backgroundColor: '#e9f7ef', borderRadius: '8px', border: '2px dashed #cdeed9', color: '#6c757d' }}>
+                  <h4 style={{ margin: '0 0 10px 0' }}>No Occupation Records</h4>
+                  <p style={{ margin: 0 }}>Click "Add Occupation" to record job title, company and duration</p>
+                </div>
+              )}
+
+              {(formData.occupations||[]).map((o, index) => (
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f0fffa', borderRadius: '8px', border: '1px solid #e6ffef' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <strong>Occupation {index+1}</strong>
+                    <button onClick={() => removeOccupation(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Job Title</label>
+                      <input type="text" value={o.jobTitle} onChange={(e) => updateOccupation(index, 'jobTitle', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Company</label>
+                      <input type="text" value={o.company} onChange={(e) => updateOccupation(index, 'company', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>From Date</label>
+                      <input type="date" value={o.fromDate} onChange={(e) => updateOccupation(index, 'fromDate', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>To Date</label>
+                      <input type="date" value={o.toDate} onChange={(e) => updateOccupation(index, 'toDate', e.target.value)} disabled={o.currently} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input type="checkbox" checked={o.currently} onChange={(e) => updateOccupation(index, 'currently', e.target.checked)} /> <label>Currently</label>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Lawyers Section */}
+          {activeSection === 'lawyers' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ color: '#7e57c2', margin: 0 }}>Lawyers Details</h3>
+                <button onClick={addLawyer} style={{ padding: '10px 20px', backgroundColor: '#7e57c2', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Lawyer</button>
+              </div>
+
+              {(formData.lawyers||[]).length === 0 && (
+                <div style={{ padding: '40px', textAlign: 'center', backgroundColor: '#f3e5f5', borderRadius: '8px', border: '2px dashed #ce93d8', color: '#6c757d' }}>
+                  <h4 style={{ margin: '0 0 10px 0' }}>No Lawyer Records</h4>
+                  <p style={{ margin: 0 }}>Click "Add Lawyer" to record lawyer details</p>
+                </div>
+              )}
+
+              {(formData.lawyers||[]).map((lawyer, index) => (
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#fafafa', borderRadius: '8px', border: '1px solid #e1bee7' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <strong>Lawyer {index+1}</strong>
+                    <button onClick={() => removeLawyer(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Lawyer Full Name</label>
+                      <input type="text" value={lawyer.lawyerFullName} onChange={(e) => updateLawyer(index, 'lawyerFullName', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Law Firm or Company</label>
+                      <input type="text" value={lawyer.lawFirmOrCompany} onChange={(e) => updateLawyer(index, 'lawFirmOrCompany', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Phone Number</label>
+                      <input type="text" value={lawyer.phoneNumber} onChange={(e) => updateLawyer(index, 'phoneNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Court Cases Section */}
+          {activeSection === 'courtCases' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ color: '#ff7043', margin: 0 }}>Court Cases</h3>
+                <button onClick={addCourtCase} style={{ padding: '10px 20px', backgroundColor: '#ff7043', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Court Case</button>
+              </div>
+
+              {(formData.courtCases||[]).length === 0 && (
+                <div style={{ padding: '40px', textAlign: 'center', backgroundColor: '#fbe9e7', borderRadius: '8px', border: '2px dashed #ffab91', color: '#6c757d' }}>
+                  <h4 style={{ margin: '0 0 10px 0' }}>No Court Case Records</h4>
+                  <p style={{ margin: 0 }}>Click "Add Court Case" to record case details</p>
+                </div>
+              )}
+
+              {(formData.courtCases||[]).map((courtCase, index) => (
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#fff3e0', borderRadius: '8px', border: '1px solid #ffcc02' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <strong>Court Case {index+1}</strong>
+                    <button onClick={() => removeCourtCase(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Case Number</label>
+                      <input type="text" value={courtCase.caseNumber} onChange={(e) => updateCourtCase(index, 'caseNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Courts</label>
+                      <input type="text" value={courtCase.courts} onChange={(e) => updateCourtCase(index, 'courts', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Description</label>
+                      <textarea value={courtCase.description} onChange={(e) => updateCourtCase(index, 'description', e.target.value)} style={{ width: '100%', padding: '8px', minHeight: '80px' }} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Active Areas Section */}
+          {activeSection === 'activeAreas' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ color: '#26a69a', margin: 0 }}>Active Areas</h3>
+                <button onClick={addActiveArea} style={{ padding: '10px 20px', backgroundColor: '#26a69a', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Active Area</button>
+              </div>
+
+              {(formData.activeAreas||[]).length === 0 && (
+                <div style={{ padding: '40px', textAlign: 'center', backgroundColor: '#e0f2f1', borderRadius: '8px', border: '2px dashed #80cbc4', color: '#6c757d' }}>
+                  <h4 style={{ margin: '0 0 10px 0' }}>No Active Area Records</h4>
+                  <p style={{ margin: 0 }}>Click "Add Active Area" to record location details</p>
+                </div>
+              )}
+
+              {(formData.activeAreas||[]).map((activeArea, index) => (
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#e8f5e8', borderRadius: '8px', border: '1px solid #c8e6c9' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <strong>Active Area {index+1}</strong>
+                    <button onClick={() => removeActiveArea(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Town</label>
+                      <input type="text" value={activeArea.town} onChange={(e) => updateActiveArea(index, 'town', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>District</label>
+                      <select value={activeArea.district} onChange={(e) => updateActiveArea(index, 'district', e.target.value)} style={{ width: '100%', padding: '8px' }}>
+                        <option value="">Select District</option>
+                        {Object.values(provinceDistricts).flat().map(district => (
+                          <option key={district} value={district}>{district}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Province</label>
+                      <select value={activeArea.province} onChange={(e) => updateActiveArea(index, 'province', e.target.value)} style={{ width: '100%', padding: '8px' }}>
+                        <option value="">Select Province</option>
+                        {Object.keys(provinceDistricts).map(province => (
+                          <option key={province} value={province}>{province}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>From Date</label>
+                      <input type="date" value={activeArea.fromDate} onChange={(e) => updateActiveArea(index, 'fromDate', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>To Date</label>
+                      <input type="date" value={activeArea.toDate} onChange={(e) => updateActiveArea(index, 'toDate', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input type="checkbox" checked={activeArea.isActive} onChange={(e) => updateActiveArea(index, 'isActive', e.target.checked)} /> 
+                      <label>Currently Active</label>
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Address Selection</label>
+                      <textarea value={activeArea.addressSelection} onChange={(e) => updateActiveArea(index, 'addressSelection', e.target.value)} style={{ width: '100%', padding: '8px', minHeight: '60px' }} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Relatives Officials Section */}
+          {activeSection === 'relativesOfficials' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ color: '#5c6bc0', margin: 0 }}>Relatives Officials</h3>
+                <button onClick={addRelativesOfficial} style={{ padding: '10px 20px', backgroundColor: '#5c6bc0', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Relatives Official</button>
+              </div>
+
+              {(formData.relativesOfficials||[]).length === 0 && (
+                <div style={{ padding: '40px', textAlign: 'center', backgroundColor: '#e8eaf6', borderRadius: '8px', border: '2px dashed #9fa8da', color: '#6c757d' }}>
+                  <h4 style={{ margin: '0 0 10px 0' }}>No Relatives Official Records</h4>
+                  <p style={{ margin: 0 }}>Click "Add Relatives Official" to record official details</p>
+                </div>
+              )}
+
+              {(formData.relativesOfficials||[]).map((relativesOfficial, index) => (
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f3f4ff', borderRadius: '8px', border: '1px solid #c5cae9' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <strong>Relatives Official {index+1}</strong>
+                    <button onClick={() => removeRelativesOfficial(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Full Name</label>
+                      <input type="text" value={relativesOfficial.fullName} onChange={(e) => updateRelativesOfficial(index, 'fullName', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>NIC Number</label>
+                      <input type="text" value={relativesOfficial.nicNumber} onChange={(e) => updateRelativesOfficial(index, 'nicNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Passport Number</label>
+                      <input type="text" value={relativesOfficial.passportNumber} onChange={(e) => updateRelativesOfficial(index, 'passportNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Department</label>
+                      <input type="text" value={relativesOfficial.department} onChange={(e) => updateRelativesOfficial(index, 'department', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Description</label>
+                      <textarea value={relativesOfficial.description} onChange={(e) => updateRelativesOfficial(index, 'description', e.target.value)} style={{ width: '100%', padding: '8px', minHeight: '80px' }} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Bank Details Section */}
+          {activeSection === 'bankDetails' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 style={{ color: '#ef5350', margin: 0 }}>Bank Details</h3>
+                <button onClick={addBankDetail} style={{ padding: '10px 20px', backgroundColor: '#ef5350', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Bank Detail</button>
+              </div>
+
+              {(formData.bankDetails||[]).length === 0 && (
+                <div style={{ padding: '40px', textAlign: 'center', backgroundColor: '#ffebee', borderRadius: '8px', border: '2px dashed #ffcdd2', color: '#6c757d' }}>
+                  <h4 style={{ margin: '0 0 10px 0' }}>No Bank Detail Records</h4>
+                  <p style={{ margin: 0 }}>Click "Add Bank Detail" to record financial details</p>
+                </div>
+              )}
+
+              {(formData.bankDetails||[]).map((bankDetail, index) => (
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#fdf2f2', borderRadius: '8px', border: '1px solid #f8bbd9' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <strong>Bank Detail {index+1}</strong>
+                    <button onClick={() => removeBankDetail(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Account Type</label>
+                      <select value={bankDetail.accountType} onChange={(e) => updateBankDetail(index, 'accountType', e.target.value)} style={{ width: '100%', padding: '8px' }}>
+                        <option value="">Select Account Type</option>
+                        <option value="savings">Savings Account</option>
+                        <option value="current">Current Account</option>
+                        <option value="fixed_deposit">Fixed Deposit</option>
+                        <option value="bank_card">Bank Card</option>
+                        <option value="credit_card">Credit Card</option>
+                        <option value="leasing">Leasing</option>
+                        <option value="loans">Loans</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Bank Name</label>
+                      <input type="text" value={bankDetail.bankName} onChange={(e) => updateBankDetail(index, 'bankName', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Account Number</label>
+                      <input type="text" value={bankDetail.accountNumber} onChange={(e) => updateBankDetail(index, 'accountNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Account Holder Name</label>
+                      <input type="text" value={bankDetail.accountHolderName} onChange={(e) => updateBankDetail(index, 'accountHolderName', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Branch</label>
+                      <input type="text" value={bankDetail.branch} onChange={(e) => updateBankDetail(index, 'branch', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Balance</label>
+                      <input type="number" step="0.01" value={bankDetail.balance} onChange={(e) => updateBankDetail(index, 'balance', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    
+                    {/* Conditionally show fields based on account type */}
+                    {(bankDetail.accountType === 'credit_card' || bankDetail.accountType === 'bank_card') && (
+                      <>
+                        <div>
+                          <label style={{ display: 'block', fontWeight: 'bold' }}>Card Number</label>
+                          <input type="text" value={bankDetail.cardNumber} onChange={(e) => updateBankDetail(index, 'cardNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontWeight: 'bold' }}>Expiry Date</label>
+                          <input type="date" value={bankDetail.expiryDate} onChange={(e) => updateBankDetail(index, 'expiryDate', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontWeight: 'bold' }}>CVV</label>
+                          <input type="text" value={bankDetail.cvv} onChange={(e) => updateBankDetail(index, 'cvv', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                      </>
+                    )}
+                    
+                    {bankDetail.accountType === 'credit_card' && (
+                      <div>
+                        <label style={{ display: 'block', fontWeight: 'bold' }}>Credit Limit</label>
+                        <input type="number" step="0.01" value={bankDetail.creditLimit} onChange={(e) => updateBankDetail(index, 'creditLimit', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                      </div>
+                    )}
+                    
+                    {(bankDetail.accountType === 'loans' || bankDetail.accountType === 'leasing') && (
+                      <>
+                        <div>
+                          <label style={{ display: 'block', fontWeight: 'bold' }}>Loan Amount</label>
+                          <input type="number" step="0.01" value={bankDetail.loanAmount} onChange={(e) => updateBankDetail(index, 'loanAmount', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontWeight: 'bold' }}>Loan Term (months)</label>
+                          <input type="number" value={bankDetail.loanTerm} onChange={(e) => updateBankDetail(index, 'loanTerm', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontWeight: 'bold' }}>Monthly Payment</label>
+                          <input type="number" step="0.01" value={bankDetail.monthlyPayment} onChange={(e) => updateBankDetail(index, 'monthlyPayment', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                        </div>
+                      </>
+                    )}
+                    
+                    {bankDetail.accountType === 'fixed_deposit' && (
+                      <div>
+                        <label style={{ display: 'block', fontWeight: 'bold' }}>Interest Rate (%)</label>
+                        <input type="number" step="0.01" value={bankDetail.interestRate} onChange={(e) => updateBankDetail(index, 'interestRate', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                      </div>
+                    )}
+                    
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Swift Code</label>
+                      <input type="text" value={bankDetail.swiftCode} onChange={(e) => updateBankDetail(index, 'swiftCode', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Routing Number</label>
+                      <input type="text" value={bankDetail.routingNumber} onChange={(e) => updateBankDetail(index, 'routingNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
                     </div>
                   </div>
                 </div>
