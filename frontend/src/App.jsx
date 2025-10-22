@@ -45,7 +45,7 @@ export default function App() {
     courtCases: [], // {caseNumber, courts, description}
     activeAreas: [], // {town, district, province, fromDate, toDate, isActive, addressSelection}
     relativesOfficials: [], // {fullName, nicNumber, passportNumber, department, description}
-    bankDetails: [], // {accountType, bankName, accountNumber, accountHolderName, branch, swiftCode, routingNumber, balance, interestRate, cardNumber, expiryDate, cvv, creditLimit, loanAmount, loanTerm, monthlyPayment}
+    bankDetails: [], // {accountType, bankName, accountNumber, accountHolderName, branch, swiftCode, balance, interestRate, cardNumber, expiryDate, cvv, creditLimit, loanAmount, loanTerm, monthlyPayment}
     gangDetails: [],
     bank: { accountNumber: '', bankName: '', branch: '', balance: 0 },
     family: [],
@@ -106,7 +106,7 @@ export default function App() {
   // Organize sections into pages - Phone is last section on page 1
   const sectionPages = [
     // Page 1: Core sections up to Phone
-    ['personal','bank','family','vehicles','bodyMarks','usedDevices','callHistory','weapons','phone'],
+    ['personal','family','vehicles','bodyMarks','usedDevices','callHistory','weapons','phone'],
     // Page 2: Extended sections
     ['properties','enemies','corruptedOfficials','socialMedia','occupation'],
     // Page 3: Legal and financial sections
@@ -254,7 +254,24 @@ export default function App() {
   const updateActiveArea = (index, field, value) => {
     setFormData(prev => ({
       ...prev,
-      activeAreas: prev.activeAreas.map((activeArea, i) => i === index ? { ...activeArea, [field]: value } : activeArea)
+      activeAreas: prev.activeAreas.map((activeArea, i) => {
+        if (i === index) {
+          let updatedArea = { ...activeArea, [field]: value };
+          
+          // Clear district when province changes
+          if (field === 'province') {
+            updatedArea.district = '';
+          }
+          
+          // Clear toDate when currently active is checked
+          if (field === 'isActive' && value === true) {
+            updatedArea.toDate = '';
+          }
+          
+          return updatedArea;
+        }
+        return activeArea;
+      })
     }));
   };
   const removeActiveArea = (index) => {
@@ -265,11 +282,41 @@ export default function App() {
   const addRelativesOfficial = () => {
     setFormData(prev => ({ ...prev, relativesOfficials: [...(prev.relativesOfficials||[]), { fullName: '', nicNumber: '', passportNumber: '', department: '', description: '' }] }));
   };
-  const updateRelativesOfficial = (index, field, value) => {
+  const updateRelativesOfficial = async (index, field, value) => {
+    // Update the field first
     setFormData(prev => ({
       ...prev,
       relativesOfficials: prev.relativesOfficials.map((relativesOfficial, i) => i === index ? { ...relativesOfficial, [field]: value } : relativesOfficial)
     }));
+
+    // If NIC number is being updated, check if person exists and auto-fill name
+    if (field === 'nicNumber' && value.trim().length > 5) {
+      try {
+        const response = await axios.get(`${API_URL}/search?query=${encodeURIComponent(value.trim())}`);
+        const people = response.data;
+        
+        // Find person with matching NIC
+        const matchingPerson = people.find(person => 
+          person.nic && person.nic.toLowerCase() === value.trim().toLowerCase()
+        );
+        
+        if (matchingPerson) {
+          // Auto-fill the full name if person exists
+          setFormData(prev => ({
+            ...prev,
+            relativesOfficials: prev.relativesOfficials.map((relativesOfficial, i) => 
+              i === index ? { 
+                ...relativesOfficial, 
+                fullName: `${matchingPerson.first_name || ''} ${matchingPerson.last_name || ''}`.trim(),
+                passportNumber: matchingPerson.passport || ''
+              } : relativesOfficial
+            )
+          }));
+        }
+      } catch (error) {
+        console.log('No matching person found or search error:', error.message);
+      }
+    }
   };
   const removeRelativesOfficial = (index) => {
     setFormData(prev => ({ ...prev, relativesOfficials: prev.relativesOfficials.filter((_, i) => i !== index) }));
@@ -277,7 +324,7 @@ export default function App() {
 
   // Bank Details handlers
   const addBankDetail = () => {
-    setFormData(prev => ({ ...prev, bankDetails: [...(prev.bankDetails||[]), { accountType: '', bankName: '', accountNumber: '', accountHolderName: '', branch: '', swiftCode: '', routingNumber: '', balance: '', interestRate: '', cardNumber: '', expiryDate: '', cvv: '', creditLimit: '', loanAmount: '', loanTerm: '', monthlyPayment: '' }] }));
+    setFormData(prev => ({ ...prev, bankDetails: [...(prev.bankDetails||[]), { accountType: '', bankName: '', accountNumber: '', accountHolderName: '', branch: '', swiftCode: '', balance: '', interestRate: '', cardNumber: '', expiryDate: '', cvv: '', creditLimit: '', loanAmount: '', loanTerm: '', monthlyPayment: '' }] }));
   };
   const updateBankDetail = (index, field, value) => {
     setFormData(prev => ({
@@ -331,8 +378,11 @@ export default function App() {
   const loadPerson = async (id) => {
     try {
       console.log('Loading person with ID:', id);
-      const response = await axios.get(`${API_URL}/person/${id}`);
+      // Add cache-busting parameter to ensure fresh data
+      const timestamp = new Date().getTime();
+      const response = await axios.get(`${API_URL}/person/${id}?_t=${timestamp}`);
       const data = response.data;
+      console.log('Loaded person data:', data);
       console.log('Received person data:', data);
       console.log('Properties from API:', data.properties);
       
@@ -345,24 +395,51 @@ export default function App() {
           aliases: data.personal.aliases || '',
           passport: data.personal.passport || '',
           nic: data.personal.nic || '',
-          height: data.personal.height || '',
+          height: data.personal.height ? String(data.personal.height) : '',
           religion: data.personal.religion || '',
           gender: data.personal.gender || '',
           dateOfBirth: data.personal.date_of_birth ? data.personal.date_of_birth.split('T')[0] : '',
-          address: data.personal.address || { number: '', street1: '', street2: '', town: '', district: '', province: '', policeArea: '', policeDivision: '' }
+          address: (() => {
+            // Handle both string (from database) and object formats
+            if (typeof data.personal.address === 'string' && data.personal.address) {
+              // Handle both old comma format and new pipe format
+              let addressParts;
+              if (data.personal.address.includes('|')) {
+                // New pipe-separated format: "123|Main Street||Colombo|Colombo|Western Province|Police Area|Police Division"
+                addressParts = data.personal.address.split('|');
+              } else {
+                // Old comma-separated format - try to parse as best as possible
+                addressParts = data.personal.address.split(', ');
+              }
+              
+              return {
+                number: addressParts[0] || '',
+                street1: addressParts[1] || '',
+                street2: addressParts[2] || '',
+                town: addressParts[3] || '',
+                district: addressParts[4] || '',
+                province: addressParts[5] || '',
+                policeArea: addressParts[6] || '',
+                policeDivision: addressParts[7] || ''
+              };
+            } else if (typeof data.personal.address === 'object' && data.personal.address !== null) {
+              return data.personal.address;
+            }
+            return { number: '', street1: '', street2: '', town: '', district: '', province: '', policeArea: '', policeDivision: '' };
+          })()
         },
         bank: data.bank ? {
           accountNumber: data.bank.account_number || '',
           bankName: data.bank.bank_name || '',
           branch: data.bank.branch || '',
-          balance: data.bank.balance || 0
-        } : { accountNumber: '', bankName: '', branch: '', balance: 0 },
+          balance: data.bank.balance ? String(data.bank.balance) : ''
+        } : { accountNumber: '', bankName: '', branch: '', balance: '' },
         family: data.family ? data.family.map(f => ({
-          relation: f.relation,
+          relation: f.relation || '',
           customRelation: f.custom_relation || '',
-          firstName: f.first_name,
-          lastName: f.last_name,
-          age: f.age || '',
+          firstName: f.first_name || '',
+          lastName: f.last_name || '',
+          age: f.age ? String(f.age) : '',
           nic: f.nic || '',
           phoneNumber: f.phone_number || ''
         })) : [],
@@ -409,7 +486,7 @@ export default function App() {
           currentlyInPossession: data.properties ? data.properties.filter(p => p.status === 'currently_in_possession').map(p => ({
             propertyType: p.property_type || '',
             description: p.description || '',
-            value: p.value || 0,
+            value: p.value ? String(p.value) : '',
             purchaseDate: p.purchase_date ? p.purchase_date.split('T')[0] : '',
             location: p.location || '',
             documents: p.documents || '',
@@ -421,7 +498,7 @@ export default function App() {
           sold: data.properties ? data.properties.filter(p => p.status === 'sold').map(p => ({
             propertyType: p.property_type || '',
             description: p.description || '',
-            value: p.value || 0,
+            value: p.value ? String(p.value) : '',
             purchaseDate: p.purchase_date ? p.purchase_date.split('T')[0] : '',
             location: p.location || '',
             documents: p.documents || '',
@@ -434,7 +511,7 @@ export default function App() {
             const intendedProps = data.properties ? data.properties.filter(p => p.status === 'intended_to_buy').map(p => ({
               propertyType: p.property_type || '',
               description: p.description || '',
-              value: p.value || 0,
+              value: p.value ? String(p.value) : '',
               purchaseDate: p.purchase_date ? p.purchase_date.split('T')[0] : '',
               location: p.location || '',
               documents: p.documents || '',
@@ -455,7 +532,7 @@ export default function App() {
           currentlyActive: g.currently_active || false
         })) : [],
         enemies: {
-          individuals: data.enemyIndividuals ? data.enemyIndividuals.map(e => ({
+          individuals: data.enemies && data.enemies.individuals ? data.enemies.individuals.map(e => ({
             enemyPersonId: e.enemy_person_id || '',
             enemyName: e.enemy_name || '',
             enemyNic: e.enemy_nic || '',
@@ -463,7 +540,7 @@ export default function App() {
             threatLevel: e.threat_level || 'Low',
             notes: e.notes || ''
           })) : [],
-          gangs: data.enemyGangs ? data.enemyGangs.map(g => ({
+          gangs: data.enemies && data.enemies.gangs ? data.enemies.gangs.map(g => ({
             gangName: g.gang_name || '',
             threatLevel: g.threat_level || 'Low',
             notes: g.notes || ''
@@ -479,12 +556,56 @@ export default function App() {
           notes: o.notes || ''
         })) : [],
         socialMedia: data.socialMedia || [],
-        occupations: data.occupations || [],
-        lawyers: data.lawyers || [],
-        courtCases: data.courtCases || [],
-        activeAreas: data.activeAreas || [],
-        relativesOfficials: data.relativesOfficials || [],
-        bankDetails: data.bankDetails || []
+        occupations: data.occupations ? data.occupations.map(o => ({
+          jobTitle: o.jobTitle || '',
+          company: o.company || '',
+          fromDate: o.fromDate || '',
+          toDate: o.toDate || '',
+          currently: o.currently || false
+        })) : [],
+        lawyers: data.lawyers ? data.lawyers.map(l => ({
+          lawyerFullName: l.lawyer_full_name || '',
+          lawFirmOrCompany: l.law_firm_or_company || '',
+          phoneNumber: l.phone_number || ''
+        })) : [],
+        courtCases: data.courtCases ? data.courtCases.map(cc => ({
+          caseNumber: cc.case_number || '',
+          courts: cc.courts || '',
+          description: cc.description || ''
+        })) : [],
+        activeAreas: data.activeAreas ? data.activeAreas.map(aa => ({
+          town: aa.town || '',
+          district: aa.district || '',
+          province: aa.province || '',
+          fromDate: aa.fromDate || '',
+          toDate: aa.toDate || '',
+          isActive: aa.isActive || false,
+          addressSelection: aa.addressSelection || ''
+        })) : [],
+        relativesOfficials: data.relativesOfficials ? data.relativesOfficials.map(ro => ({
+          fullName: ro.full_name || '',
+          nicNumber: ro.nic_number || '',
+          passportNumber: ro.passport_number || '',
+          department: ro.department || '',
+          description: ro.description || ''
+        })) : [],
+        bankDetails: data.bankDetails ? data.bankDetails.map(bd => ({
+          accountType: bd.account_type || '',
+          bankName: bd.bank_name || '',
+          accountNumber: bd.account_number || '',
+          accountHolderName: bd.account_holder_name || '',
+          branch: bd.branch || '',
+          swiftCode: bd.swift_code || '',
+          balance: bd.balance ? String(bd.balance) : '',
+          interestRate: bd.interest_rate ? String(bd.interest_rate) : '',
+          cardNumber: bd.card_number || '',
+          expiryDate: bd.expiry_date ? bd.expiry_date.split('T')[0] : '',
+          cvv: bd.cvv || '',
+          creditLimit: bd.credit_limit ? String(bd.credit_limit) : '',
+          loanAmount: bd.loan_amount ? String(bd.loan_amount) : '',
+          loanTerm: bd.loan_term ? String(bd.loan_term) : '',
+          monthlyPayment: bd.monthly_payment ? String(bd.monthly_payment) : ''
+        })) : []
       });
       setIsEditing(false);
     } catch (error) {
@@ -497,8 +618,8 @@ export default function App() {
   const handleAddNew = () => {
     setSelectedPerson(null);
     setFormData({
-      personal: { firstName: '', lastName: '', nic: '', address: { number: '', street1: '', street2: '', town: '', district: '', province: '', policeArea: '', policeDivision: '' } },
-      bank: { accountNumber: '', bankName: '', branch: '', balance: 0 },
+      personal: { firstName: '', lastName: '', fullName: '', aliases: '', passport: '', nic: '', height: '', religion: '', gender: '', dateOfBirth: '', address: { number: '', street1: '', street2: '', town: '', district: '', province: '', policeArea: '', policeDivision: '' } },
+      bank: { accountNumber: '', bankName: '', branch: '', balance: '' },
       family: [],
       vehicles: [],
       bodyMarks: [],
@@ -506,13 +627,21 @@ export default function App() {
       callHistory: [],
       weapons: [],
       phones: [],
+      gangDetails: [],
       socialMedia: [],
       occupations: [],
       properties: {
         currentlyInPossession: [],
         sold: [],
         intendedToBuy: []
-      }
+      },
+      enemies: [],
+      corruptedOfficials: [],
+      lawyers: [],
+      courtCases: [],
+      activeAreas: [],
+      relativesOfficials: [],
+      bankDetails: []
     });
     setIsEditing(true);
     setSearchResults([]);
@@ -553,8 +682,21 @@ export default function App() {
         ...formData.properties.intendedToBuy.map(p => ({ ...p, status: 'intended_to_buy' }))
       ];
 
-      const updateData = {
+      // Clean up the data before sending to backend
+      const cleanedFormData = {
         ...formData,
+        personal: {
+          ...formData.personal,
+          height: formData.personal.height ? parseFloat(formData.personal.height) : null,
+        },
+        bank: {
+          ...formData.bank,
+          balance: formData.bank.balance ? parseFloat(formData.bank.balance) : 0
+        }
+      };
+
+      const updateData = {
+        ...cleanedFormData,
         secondPhone,
         properties: allProperties
       };
@@ -562,15 +704,45 @@ export default function App() {
       
       console.log('Updating person with data:', updateData);
 
-      await axios.put(`${API_URL}/person/${selectedPerson}`, updateData);
-      alert('Updated successfully');
-      setIsEditing(false);
-      // Reload the person data to show updated properties
+      const response = await axios.put(`${API_URL}/person/${selectedPerson}`, updateData);
+      console.log('Update response:', response.data);
+      
+      // Clear any cached data and force a fresh reload
+      setFormData({
+        personal: { firstName: '', lastName: '', fullName: '', aliases: '', passport: '', nic: '', height: '', religion: '', gender: '', dateOfBirth: '', address: '' },
+        bank: { accountNumber: '', bankName: '', branch: '', balance: '' },
+        family: [],
+        vehicles: [],
+        bodyMarks: [],
+        usedDevices: [],
+        callHistory: [],
+        weapons: [],
+        phones: [],
+        properties: { currentlyInPossession: [], sold: [], intendedToBuy: [] },
+        gangDetails: [],
+        enemies: [],
+        corruptedOfficials: [],
+        socialMedia: [],
+        occupations: [],
+        lawyers: [],
+        courtCases: [],
+        activeAreas: [],
+        relativesOfficials: [],
+        bankDetails: []
+      });
+      
+      // Force reload fresh data from database
       await loadPerson(selectedPerson);
+      
+      alert('Updated successfully! Data has been saved to the database.');
+      setIsEditing(false);
+      
     } catch (error) {
       console.error('Update error:', error);
-      const message = error.response?.data?.message || error.response?.data?.error || 'Failed to update person';
-      alert(message);
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      const message = error.response?.data?.message || error.response?.data?.error || error.response?.data?.details || 'Failed to update person';
+      alert(`Update failed: ${message}`);
     }
   };
 
@@ -1184,7 +1356,6 @@ export default function App() {
             // Define section titles
             const sectionTitles = {
               personal: 'Personal Details',
-              bank: 'Banking Details', 
               family: 'Family & Friends',
               vehicles: 'Vehicle Details',
               bodyMarks: 'Body Marks',
@@ -1233,7 +1404,6 @@ export default function App() {
         <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <h2 style={{ marginBottom: '20px', color: '#2c3e50' }}>
             {activeSection === 'personal' && 'Personal Details'}
-            {activeSection === 'bank' && 'Bank Details'}
             {activeSection === 'family' && 'Family Members & Friends'}
             {activeSection === 'vehicles' && 'VEHICLES Details'}
             {activeSection === 'bodyMarks' && 'BODY MARKS Details'}
@@ -1602,46 +1772,7 @@ export default function App() {
             </div>
           )}
 
-          {activeSection === 'bank' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Account Number</label>
-                <input
-                  type="text"
-                  value={formData.bank.accountNumber}
-                  onChange={(e) => updateBankField('accountNumber', e.target.value)}
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Bank Name</label>
-                <input
-                  type="text"
-                  value={formData.bank.bankName}
-                  onChange={(e) => updateBankField('bankName', e.target.value)}
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Branch</label>
-                <input
-                  type="text"
-                  value={formData.bank.branch}
-                  onChange={(e) => updateBankField('branch', e.target.value)}
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Balance</label>
-                <input
-                  type="number"
-                  value={formData.bank.balance}
-                  onChange={(e) => updateBankField('balance', parseFloat(e.target.value) || 0)}
-                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
-                />
-              </div>
-            </div>
-          )}
+
 
           {activeSection === 'family' && (
             <div>
@@ -4393,9 +4524,14 @@ export default function App() {
                       <label style={{ display: 'block', fontWeight: 'bold' }}>District</label>
                       <select value={activeArea.district} onChange={(e) => updateActiveArea(index, 'district', e.target.value)} style={{ width: '100%', padding: '8px' }}>
                         <option value="">Select District</option>
-                        {Object.values(provinceDistricts).flat().map(district => (
-                          <option key={district} value={district}>{district}</option>
-                        ))}
+                        {activeArea.province && provinceDistricts[activeArea.province] ? 
+                          provinceDistricts[activeArea.province].map(district => (
+                            <option key={district} value={district}>{district}</option>
+                          )) :
+                          Object.values(provinceDistricts).flat().map(district => (
+                            <option key={district} value={district}>{district}</option>
+                          ))
+                        }
                       </select>
                     </div>
                     <div>
@@ -4411,10 +4547,13 @@ export default function App() {
                       <label style={{ display: 'block', fontWeight: 'bold' }}>From Date</label>
                       <input type="date" value={activeArea.fromDate} onChange={(e) => updateActiveArea(index, 'fromDate', e.target.value)} style={{ width: '100%', padding: '8px' }} />
                     </div>
-                    <div>
-                      <label style={{ display: 'block', fontWeight: 'bold' }}>To Date</label>
-                      <input type="date" value={activeArea.toDate} onChange={(e) => updateActiveArea(index, 'toDate', e.target.value)} style={{ width: '100%', padding: '8px' }} />
-                    </div>
+                    {/* Hide To Date when Currently Active is checked */}
+                    {!activeArea.isActive && (
+                      <div>
+                        <label style={{ display: 'block', fontWeight: 'bold' }}>To Date</label>
+                        <input type="date" value={activeArea.toDate} onChange={(e) => updateActiveArea(index, 'toDate', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <input type="checkbox" checked={activeArea.isActive} onChange={(e) => updateActiveArea(index, 'isActive', e.target.checked)} /> 
                       <label>Currently Active</label>
@@ -4582,14 +4721,15 @@ export default function App() {
                       </div>
                     )}
                     
-                    <div>
-                      <label style={{ display: 'block', fontWeight: 'bold' }}>Swift Code</label>
-                      <input type="text" value={bankDetail.swiftCode} onChange={(e) => updateBankDetail(index, 'swiftCode', e.target.value)} style={{ width: '100%', padding: '8px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontWeight: 'bold' }}>Routing Number</label>
-                      <input type="text" value={bankDetail.routingNumber} onChange={(e) => updateBankDetail(index, 'routingNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
-                    </div>
+                    {/* Hide Swift Code for Credit Cards */}
+                    {bankDetail.accountType !== 'credit_card' && (
+                      <div>
+                        <label style={{ display: 'block', fontWeight: 'bold' }}>Swift Code</label>
+                        <input type="text" value={bankDetail.swiftCode} onChange={(e) => updateBankDetail(index, 'swiftCode', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                      </div>
+                    )}
+                    
+                    {/* Routing Number field removed completely per user request */}
                   </div>
                 </div>
               ))}

@@ -86,12 +86,7 @@ const uploadProperties = multer({
 
 // Add middleware to check database connection
 const checkDbConnection = (req, res, next) => {
-  if (!pool.isConnected()) {
-    return res.status(503).json({ 
-      error: 'Database connection unavailable', 
-      message: 'Please ensure PostgreSQL is running and properly configured' 
-    });
-  }
+  // Just pass through for now - the pool will handle connection errors
   next();
 };
 
@@ -107,8 +102,10 @@ app.get('/api/search', checkDbConnection, async (req, res) => {
       `SELECT DISTINCT p.id, p.first_name, p.last_name, p.nic, p.passport, p.full_name 
        FROM people p
        LEFT JOIN gang_details g ON p.id = g.person_id
+       LEFT JOIN lawyers l ON p.id = l.person_id
        WHERE p.first_name ILIKE $1 OR p.last_name ILIKE $1 OR p.nic ILIKE $1 
           OR p.passport ILIKE $1 OR p.full_name ILIKE $1 OR g.gang_name ILIKE $1
+          OR l.lawyer_full_name ILIKE $1 OR l.law_firm_or_company ILIKE $1
        ORDER BY p.first_name`,
       [`%${query}%`]
     );
@@ -164,9 +161,17 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
       [id]
     );
 
-    // Get call history
+    // Get call history with name resolution
     const callHistoryResult = await pool.query(
-      'SELECT * FROM call_history WHERE person_id = $1 ORDER BY date_time DESC',
+      `SELECT ch.*, 
+        (SELECT p2.full_name 
+         FROM second_phone sp 
+         JOIN people p2 ON sp.person_id = p2.id 
+         WHERE (sp.mobile = ch.number OR sp.whatsapp = ch.number OR sp.viber = ch.number OR sp.other = ch.number)
+         LIMIT 1) AS contact_name
+       FROM call_history ch 
+       WHERE ch.person_id = $1 
+       ORDER BY ch.date_time DESC`,
       [id]
     );
 
@@ -205,7 +210,7 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
 
     // Get corrupted officials
     const corruptedOfficialsResult = await pool.query(
-      `SELECT co.*, p.first_name, p.last_name, p.nic 
+      `SELECT co.*, p.first_name, p.last_name, p.nic, p.passport 
        FROM corrupted_officials co 
        JOIN people p ON co.official_person_id = p.id 
        WHERE co.person_id = $1 ORDER BY co.created_at DESC`,
@@ -315,6 +320,8 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         device: call.device,
         call_type: call.call_type,
         number: call.number,
+        contact_name: call.contact_name,
+        display_name: call.contact_name || call.number,
         date_time: call.date_time
       })),
       weapons: weaponsResult.rows.map(weapon => ({
@@ -362,26 +369,29 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         to_date: gang.to_date,
         currently_active: gang.currently_active
       })),
-      enemyIndividuals: enemyIndividualsResult.rows.map(enemy => ({
-        id: enemy.id,
-        enemy_person_id: enemy.enemy_person_id,
-        enemy_name: `${enemy.first_name} ${enemy.last_name}`,
-        enemy_nic: enemy.nic,
-        relationship_type: enemy.relationship_type,
-        threat_level: enemy.threat_level,
-        notes: enemy.notes
-      })),
-      enemyGangs: enemyGangsResult.rows.map(gang => ({
-        id: gang.id,
-        gang_name: gang.gang_name,
-        threat_level: gang.threat_level,
-        notes: gang.notes
-      })),
+      enemies: {
+        individuals: enemyIndividualsResult.rows.map(enemy => ({
+          id: enemy.id,
+          enemy_person_id: enemy.enemy_person_id,
+          enemy_name: `${enemy.first_name} ${enemy.last_name}`,
+          enemy_nic: enemy.nic,
+          relationship_type: enemy.relationship_type,
+          threat_level: enemy.threat_level,
+          notes: enemy.notes
+        })),
+        gangs: enemyGangsResult.rows.map(gang => ({
+          id: gang.id,
+          gang_name: gang.gang_name,
+          threat_level: gang.threat_level,
+          notes: gang.notes
+        }))
+      },
       corruptedOfficials: corruptedOfficialsResult.rows.map(official => ({
         id: official.id,
         official_person_id: official.official_person_id,
         official_name: `${official.first_name} ${official.last_name}`,
         official_nic: official.nic,
+        official_passport: official.passport,
         department: official.department,
         corruption_type: official.corruption_type,
         notes: official.notes
@@ -395,11 +405,11 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
       })),
       occupations: occupationsResult.rows.map(occupation => ({
         id: occupation.id,
-        job_title: occupation.job_title,
+        jobTitle: occupation.job_title,
         company: occupation.company,
-        from_date: occupation.from_date,
-        to_date: occupation.to_date,
-        currently_active: occupation.currently_active
+        fromDate: occupation.from_date ? occupation.from_date.toISOString().split('T')[0] : null,
+        toDate: occupation.to_date ? occupation.to_date.toISOString().split('T')[0] : null,
+        currently: occupation.currently_active
       })),
       lawyers: lawyersResult.rows.map(lawyer => ({
         id: lawyer.id,
@@ -418,10 +428,10 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         town: activeArea.town,
         district: activeArea.district,
         province: activeArea.province,
-        from_date: activeArea.from_date,
-        to_date: activeArea.to_date,
-        is_active: activeArea.is_active,
-        address_selection: activeArea.address_selection
+        fromDate: activeArea.from_date ? activeArea.from_date.toISOString().split('T')[0] : null,
+        toDate: activeArea.to_date ? activeArea.to_date.toISOString().split('T')[0] : null,
+        isActive: activeArea.is_active,
+        addressSelection: activeArea.address_selection
       })),
       relativesOfficials: relativesOfficialsResult.rows.map(relativesOfficial => ({
         id: relativesOfficial.id,
@@ -473,15 +483,15 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
     if (typeof personal.address === 'object' && personal.address !== null) {
       const addr = personal.address;
       addressString = [
-        addr.number,
-        addr.street1,
-        addr.street2,
-        addr.town,
-        addr.district,
-        addr.province,
-        addr.policeArea,
-        addr.policeDivision
-      ].filter(Boolean).join(', ');
+        addr.number || '',
+        addr.street1 || '',
+        addr.street2 || '',
+        addr.town || '',
+        addr.district || '',
+        addr.province || '',
+        addr.policeArea || '',
+        addr.policeDivision || ''
+      ].join('|');
     } else {
       addressString = personal.address || '';
     }
@@ -499,7 +509,7 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
         personal.nic, 
         personal.height ? parseFloat(personal.height) : null,
         personal.religion,
-        personal.gender,
+        personal.gender || null, // Use null if gender is empty or undefined
         personal.dateOfBirth || null,
         addressString
       ]
@@ -530,6 +540,10 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
     // Insert gang details if provided
     if (gangDetails && gangDetails.length > 0) {
       for (const gang of gangDetails) {
+        // Skip empty gang details
+        if (!gang.gangName || !gang.position) {
+          continue;
+        }
         await client.query(
           `INSERT INTO gang_details (person_id, gang_name, position_in_gang, from_date, to_date, currently_active)
            VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -640,10 +654,15 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
     // Insert occupations if provided
     if (req.body.occupations && req.body.occupations.length > 0) {
       for (const occupation of req.body.occupations) {
+        // Skip entries with empty job_title since it's required
+        if (!occupation.jobTitle || occupation.jobTitle.trim() === '') {
+          console.log('Skipping occupation with empty job_title');
+          continue;
+        }
         await client.query(
           `INSERT INTO occupations (person_id, job_title, company, from_date, to_date, currently_active)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-          [personId, occupation.jobTitle, occupation.company, occupation.fromDate || null, occupation.toDate || null, occupation.currently || false]
+          [personId, occupation.jobTitle.trim(), occupation.company || null, occupation.fromDate || null, occupation.toDate || null, occupation.currently || false]
         );
       }
     }
@@ -651,10 +670,14 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
     // Insert lawyers if provided
     if (req.body.lawyers && req.body.lawyers.length > 0) {
       for (const lawyer of req.body.lawyers) {
+        // Skip entries with empty lawyer_full_name since it's required
+        if (!lawyer.lawyerFullName || lawyer.lawyerFullName.trim() === '') {
+          continue;
+        }
         await client.query(
           `INSERT INTO lawyers (person_id, lawyer_full_name, law_firm_or_company, phone_number)
            VALUES ($1, $2, $3, $4)`,
-          [personId, lawyer.lawyerFullName, lawyer.lawFirmOrCompany, lawyer.phoneNumber]
+          [personId, lawyer.lawyerFullName.trim(), lawyer.lawFirmOrCompany || null, lawyer.phoneNumber || null]
         );
       }
     }
@@ -662,10 +685,14 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
     // Insert court cases if provided
     if (req.body.courtCases && req.body.courtCases.length > 0) {
       for (const courtCase of req.body.courtCases) {
+        // Skip entries with empty case_number since it's required
+        if (!courtCase.caseNumber || courtCase.caseNumber.trim() === '') {
+          continue;
+        }
         await client.query(
           `INSERT INTO court_cases (person_id, case_number, courts, description)
            VALUES ($1, $2, $3, $4)`,
-          [personId, courtCase.caseNumber, courtCase.courts, courtCase.description]
+          [personId, courtCase.caseNumber.trim(), courtCase.courts || null, courtCase.description || null]
         );
       }
     }
@@ -676,7 +703,17 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
         await client.query(
           `INSERT INTO active_areas (person_id, town, district, province, from_date, to_date, is_active, address_selection)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [personId, activeArea.town, activeArea.district, activeArea.province, activeArea.fromDate, activeArea.toDate, activeArea.isActive || false, activeArea.addressSelection]
+          [
+            personId, 
+            activeArea.town || null, 
+            activeArea.district || null, 
+            activeArea.province || null, 
+            activeArea.fromDate && activeArea.fromDate.trim() !== '' ? activeArea.fromDate : null, 
+            // Set to_date to NULL if currently active
+            activeArea.isActive ? null : (activeArea.toDate && activeArea.toDate.trim() !== '' ? activeArea.toDate : null), 
+            activeArea.isActive || false, 
+            activeArea.addressSelection || null
+          ]
         );
       }
     }
@@ -684,10 +721,59 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
     // Insert relatives officials if provided
     if (req.body.relativesOfficials && req.body.relativesOfficials.length > 0) {
       for (const relativesOfficial of req.body.relativesOfficials) {
+        // Skip entries with empty full_name since it's required
+        if (!relativesOfficial.fullName || relativesOfficial.fullName.trim() === '') {
+          continue;
+        }
+
+        // Auto-create person if they don't exist and we have NIC or passport
+        if ((relativesOfficial.nicNumber && relativesOfficial.nicNumber.trim() !== '') || 
+            (relativesOfficial.passportNumber && relativesOfficial.passportNumber.trim() !== '')) {
+          
+          let existingPerson = null;
+          
+          // Check if person already exists by NIC
+          if (relativesOfficial.nicNumber && relativesOfficial.nicNumber.trim() !== '') {
+            const nicCheck = await client.query('SELECT id FROM people WHERE nic = $1', [relativesOfficial.nicNumber.trim()]);
+            if (nicCheck.rows.length > 0) {
+              existingPerson = nicCheck.rows[0];
+            }
+          }
+          
+          // If not found by NIC, check by passport
+          if (!existingPerson && relativesOfficial.passportNumber && relativesOfficial.passportNumber.trim() !== '') {
+            const passportCheck = await client.query('SELECT id FROM people WHERE passport = $1', [relativesOfficial.passportNumber.trim()]);
+            if (passportCheck.rows.length > 0) {
+              existingPerson = passportCheck.rows[0];
+            }
+          }
+          
+          // Create new person if doesn't exist
+          if (!existingPerson) {
+            console.log('Creating new person for relatives official:', relativesOfficial.fullName);
+            const nameParts = relativesOfficial.fullName.trim().split(' ');
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.slice(1).join(' ') || '';
+            
+            const newPersonResult = await client.query(
+              `INSERT INTO people (first_name, last_name, full_name, nic, passport, created_at) 
+               VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) RETURNING id`,
+              [
+                firstName,
+                lastName,
+                relativesOfficial.fullName.trim(),
+                relativesOfficial.nicNumber && relativesOfficial.nicNumber.trim() !== '' ? relativesOfficial.nicNumber.trim() : null,
+                relativesOfficial.passportNumber && relativesOfficial.passportNumber.trim() !== '' ? relativesOfficial.passportNumber.trim() : null
+              ]
+            );
+            console.log('Created new person with ID:', newPersonResult.rows[0].id);
+          }
+        }
+
         await client.query(
           `INSERT INTO relatives_officials (person_id, full_name, nic_number, passport_number, department, description)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-          [personId, relativesOfficial.fullName, relativesOfficial.nicNumber, relativesOfficial.passportNumber, relativesOfficial.department, relativesOfficial.description]
+          [personId, relativesOfficial.fullName.trim(), relativesOfficial.nicNumber || null, relativesOfficial.passportNumber || null, relativesOfficial.department || null, relativesOfficial.description || null]
         );
       }
     }
@@ -695,10 +781,32 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
     // Insert bank details if provided
     if (req.body.bankDetails && req.body.bankDetails.length > 0) {
       for (const bankDetail of req.body.bankDetails) {
+        // Skip entries with empty account_type since it's required
+        if (!bankDetail.accountType || bankDetail.accountType.trim() === '') {
+          continue;
+        }
         await client.query(
           `INSERT INTO bank_details (person_id, account_type, bank_name, account_number, account_holder_name, branch, swift_code, routing_number, balance, interest_rate, card_number, expiry_date, cvv, credit_limit, loan_amount, loan_term, monthly_payment)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-          [personId, bankDetail.accountType, bankDetail.bankName, bankDetail.accountNumber, bankDetail.accountHolderName, bankDetail.branch, bankDetail.swiftCode, bankDetail.routingNumber, bankDetail.balance, bankDetail.interestRate, bankDetail.cardNumber, bankDetail.expiryDate, bankDetail.cvv, bankDetail.creditLimit, bankDetail.loanAmount, bankDetail.loanTerm, bankDetail.monthlyPayment]
+          [
+            personId, 
+            bankDetail.accountType.trim(), 
+            bankDetail.bankName || null, 
+            bankDetail.accountNumber || null, 
+            bankDetail.accountHolderName || null, 
+            bankDetail.branch || null, 
+            bankDetail.swiftCode || null, 
+            bankDetail.routingNumber || null, 
+            bankDetail.balance || null, 
+            bankDetail.interestRate || null, 
+            bankDetail.cardNumber || null, 
+            bankDetail.expiryDate && bankDetail.expiryDate.trim() !== '' ? bankDetail.expiryDate : null, 
+            bankDetail.cvv || null, 
+            bankDetail.creditLimit || null, 
+            bankDetail.loanAmount || null, 
+            bankDetail.loanTerm || null, 
+            bankDetail.monthlyPayment || null
+          ]
         );
       }
     }
@@ -725,9 +833,10 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
   
   try {
     const { id } = req.params;
-    const { personal, bank, family, vehicles, bodyMarks, usedDevices, callHistory, weapons, secondPhone, properties } = req.body;
+    const { personal, gangDetails, bank, family, vehicles, bodyMarks, usedDevices, callHistory, weapons, secondPhone, properties, socialMedia, occupations, lawyers, courtCases, activeAreas, relativesOfficials, bankDetails, corruptedOfficials, enemies } = req.body;
     
     console.log('UPDATE request for person ID:', id);
+    console.log('Personal data received:', personal);
     console.log('Properties data received:', properties);
     
     await client.query('BEGIN');
@@ -737,15 +846,15 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     if (typeof personal.address === 'object' && personal.address !== null) {
       const addr = personal.address;
       addressString = [
-        addr.number,
-        addr.street1,
-        addr.street2,
-        addr.town,
-        addr.district,
-        addr.province,
-        addr.policeArea,
-        addr.policeDivision
-      ].filter(Boolean).join(', ');
+        addr.number || '',
+        addr.street1 || '',
+        addr.street2 || '',
+        addr.town || '',
+        addr.district || '',
+        addr.province || '',
+        addr.policeArea || '',
+        addr.policeDivision || ''
+      ].join('|');
     } else {
       addressString = personal.address || '';
     }
@@ -800,6 +909,7 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     }
     
     // Delete and recreate all related records (simpler approach)
+    await client.query('DELETE FROM gang_details WHERE person_id = $1', [id]);
     await client.query('DELETE FROM family_members WHERE person_id = $1', [id]);
     await client.query('DELETE FROM vehicles WHERE person_id = $1', [id]);
     await client.query('DELETE FROM body_marks WHERE person_id = $1', [id]);
@@ -815,8 +925,27 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     await client.query('DELETE FROM active_areas WHERE person_id = $1', [id]);
     await client.query('DELETE FROM relatives_officials WHERE person_id = $1', [id]);
     await client.query('DELETE FROM bank_details WHERE person_id = $1', [id]);
+    await client.query('DELETE FROM corrupted_officials WHERE person_id = $1', [id]);
+    await client.query('DELETE FROM enemy_individuals WHERE person_id = $1', [id]);
+    await client.query('DELETE FROM enemy_gangs WHERE person_id = $1', [id]);
     
     // Re-insert all data
+    
+    // Insert gang details if provided
+    if (gangDetails && gangDetails.length > 0) {
+      for (const gang of gangDetails) {
+        // Skip empty gang details
+        if (!gang.gangName || !gang.position) {
+          continue;
+        }
+        await client.query(
+          `INSERT INTO gang_details (person_id, gang_name, position_in_gang, from_date, to_date, currently_active)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [id, gang.gangName, gang.position, gang.fromDate || null, gang.toDate || null, gang.currentlyActive || false]
+        );
+      }
+    }
+    
     if (family && family.length > 0) {
       for (const member of family) {
         await client.query(
@@ -931,10 +1060,15 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     if (req.body.occupations && req.body.occupations.length > 0) {
       console.log('Inserting', req.body.occupations.length, 'occupations for person', id);
       for (const occupation of req.body.occupations) {
+        // Skip entries with empty job_title since it's required
+        if (!occupation.jobTitle || occupation.jobTitle.trim() === '') {
+          console.log('Skipping occupation with empty job_title');
+          continue;
+        }
         await client.query(
           `INSERT INTO occupations (person_id, job_title, company, from_date, to_date, currently_active)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-          [id, occupation.jobTitle, occupation.company, occupation.fromDate || null, occupation.toDate || null, occupation.currently || false]
+          [id, occupation.jobTitle.trim(), occupation.company || null, occupation.fromDate || null, occupation.toDate || null, occupation.currently || false]
         );
       }
     }
@@ -943,10 +1077,15 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     if (req.body.lawyers && req.body.lawyers.length > 0) {
       console.log('Inserting', req.body.lawyers.length, 'lawyers for person', id);
       for (const lawyer of req.body.lawyers) {
+        // Skip entries with empty lawyer_full_name since it's required
+        if (!lawyer.lawyerFullName || lawyer.lawyerFullName.trim() === '') {
+          console.log('Skipping lawyer with empty full_name');
+          continue;
+        }
         await client.query(
           `INSERT INTO lawyers (person_id, lawyer_full_name, law_firm_or_company, phone_number)
            VALUES ($1, $2, $3, $4)`,
-          [id, lawyer.lawyerFullName, lawyer.lawFirmOrCompany, lawyer.phoneNumber]
+          [id, lawyer.lawyerFullName.trim(), lawyer.lawFirmOrCompany || null, lawyer.phoneNumber || null]
         );
       }
     }
@@ -955,10 +1094,15 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     if (req.body.courtCases && req.body.courtCases.length > 0) {
       console.log('Inserting', req.body.courtCases.length, 'court cases for person', id);
       for (const courtCase of req.body.courtCases) {
+        // Skip entries with empty case_number since it's required
+        if (!courtCase.caseNumber || courtCase.caseNumber.trim() === '') {
+          console.log('Skipping court case with empty case_number');
+          continue;
+        }
         await client.query(
           `INSERT INTO court_cases (person_id, case_number, courts, description)
            VALUES ($1, $2, $3, $4)`,
-          [id, courtCase.caseNumber, courtCase.courts, courtCase.description]
+          [id, courtCase.caseNumber.trim(), courtCase.courts || null, courtCase.description || null]
         );
       }
     }
@@ -970,7 +1114,17 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
         await client.query(
           `INSERT INTO active_areas (person_id, town, district, province, from_date, to_date, is_active, address_selection)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [id, activeArea.town, activeArea.district, activeArea.province, activeArea.fromDate, activeArea.toDate, activeArea.isActive || false, activeArea.addressSelection]
+          [
+            id, 
+            activeArea.town || null, 
+            activeArea.district || null, 
+            activeArea.province || null, 
+            activeArea.fromDate && activeArea.fromDate.trim() !== '' ? activeArea.fromDate : null, 
+            // Set to_date to NULL if currently active
+            activeArea.isActive ? null : (activeArea.toDate && activeArea.toDate.trim() !== '' ? activeArea.toDate : null), 
+            activeArea.isActive || false, 
+            activeArea.addressSelection || null
+          ]
         );
       }
     }
@@ -979,10 +1133,60 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     if (req.body.relativesOfficials && req.body.relativesOfficials.length > 0) {
       console.log('Inserting', req.body.relativesOfficials.length, 'relatives officials for person', id);
       for (const relativesOfficial of req.body.relativesOfficials) {
+        // Skip entries with empty full_name since it's required
+        if (!relativesOfficial.fullName || relativesOfficial.fullName.trim() === '') {
+          console.log('Skipping relatives official with empty full_name');
+          continue;
+        }
+
+        // Auto-create person if they don't exist and we have NIC or passport
+        if ((relativesOfficial.nicNumber && relativesOfficial.nicNumber.trim() !== '') || 
+            (relativesOfficial.passportNumber && relativesOfficial.passportNumber.trim() !== '')) {
+          
+          let existingPerson = null;
+          
+          // Check if person already exists by NIC
+          if (relativesOfficial.nicNumber && relativesOfficial.nicNumber.trim() !== '') {
+            const nicCheck = await client.query('SELECT id FROM people WHERE nic = $1', [relativesOfficial.nicNumber.trim()]);
+            if (nicCheck.rows.length > 0) {
+              existingPerson = nicCheck.rows[0];
+            }
+          }
+          
+          // If not found by NIC, check by passport
+          if (!existingPerson && relativesOfficial.passportNumber && relativesOfficial.passportNumber.trim() !== '') {
+            const passportCheck = await client.query('SELECT id FROM people WHERE passport = $1', [relativesOfficial.passportNumber.trim()]);
+            if (passportCheck.rows.length > 0) {
+              existingPerson = passportCheck.rows[0];
+            }
+          }
+          
+          // Create new person if doesn't exist
+          if (!existingPerson) {
+            console.log('Creating new person for relatives official:', relativesOfficial.fullName);
+            const nameParts = relativesOfficial.fullName.trim().split(' ');
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.slice(1).join(' ') || '';
+            
+            const newPersonResult = await client.query(
+              `INSERT INTO people (first_name, last_name, full_name, nic, passport, created_at) 
+               VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) RETURNING id`,
+              [
+                firstName,
+                lastName,
+                relativesOfficial.fullName.trim(),
+                relativesOfficial.nicNumber && relativesOfficial.nicNumber.trim() !== '' ? relativesOfficial.nicNumber.trim() : null,
+                relativesOfficial.passportNumber && relativesOfficial.passportNumber.trim() !== '' ? relativesOfficial.passportNumber.trim() : null
+              ]
+            );
+            console.log('Created new person with ID:', newPersonResult.rows[0].id);
+          }
+        }
+
         await client.query(
           `INSERT INTO relatives_officials (person_id, full_name, nic_number, passport_number, department, description)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-          [id, relativesOfficial.fullName, relativesOfficial.nicNumber, relativesOfficial.passportNumber, relativesOfficial.department, relativesOfficial.description]
+          [id, relativesOfficial.fullName.trim(), relativesOfficial.nicNumber || null, relativesOfficial.passportNumber || null, relativesOfficial.department || null, relativesOfficial.description || null]
         );
       }
     }
@@ -991,15 +1195,226 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     if (req.body.bankDetails && req.body.bankDetails.length > 0) {
       console.log('Inserting', req.body.bankDetails.length, 'bank details for person', id);
       for (const bankDetail of req.body.bankDetails) {
+        // Skip entries with empty account_type since it's required
+        if (!bankDetail.accountType || bankDetail.accountType.trim() === '') {
+          console.log('Skipping bank detail with empty account_type');
+          continue;
+        }
         await client.query(
           `INSERT INTO bank_details (person_id, account_type, bank_name, account_number, account_holder_name, branch, swift_code, routing_number, balance, interest_rate, card_number, expiry_date, cvv, credit_limit, loan_amount, loan_term, monthly_payment)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-          [id, bankDetail.accountType, bankDetail.bankName, bankDetail.accountNumber, bankDetail.accountHolderName, bankDetail.branch, bankDetail.swiftCode, bankDetail.routingNumber, bankDetail.balance, bankDetail.interestRate, bankDetail.cardNumber, bankDetail.expiryDate, bankDetail.cvv, bankDetail.creditLimit, bankDetail.loanAmount, bankDetail.loanTerm, bankDetail.monthlyPayment]
+          [
+            id, 
+            bankDetail.accountType.trim(), 
+            bankDetail.bankName || null, 
+            bankDetail.accountNumber || null, 
+            bankDetail.accountHolderName || null, 
+            bankDetail.branch || null, 
+            bankDetail.swiftCode || null, 
+            bankDetail.routingNumber || null, 
+            bankDetail.balance || null, 
+            bankDetail.interestRate || null, 
+            bankDetail.cardNumber || null, 
+            bankDetail.expiryDate && bankDetail.expiryDate.trim() !== '' ? bankDetail.expiryDate : null, 
+            bankDetail.cvv || null, 
+            bankDetail.creditLimit || null, 
+            bankDetail.loanAmount || null, 
+            bankDetail.loanTerm || null, 
+            bankDetail.monthlyPayment || null
+          ]
+        );
+      }
+    }
+
+    // Insert corrupted officials if provided
+    if (corruptedOfficials && corruptedOfficials.length > 0) {
+      console.log('Inserting', corruptedOfficials.length, 'corrupted officials for person', id);
+      for (const official of corruptedOfficials) {
+        // Skip entries with empty required fields
+        if (!official.officialName || official.officialName.trim() === '' || 
+            !official.department || official.department.trim() === '') {
+          console.log('Skipping corrupted official with empty required fields');
+          continue;
+        }
+
+        let officialPersonId = null;
+        
+        // First, try to find or create the official in the people table
+        if (official.officialNic && official.officialNic.trim() !== '') {
+          const existingPerson = await client.query(
+            'SELECT id FROM people WHERE nic = $1',
+            [official.officialNic.trim()]
+          );
+          
+          if (existingPerson.rows.length > 0) {
+            officialPersonId = existingPerson.rows[0].id;
+            console.log(`Found existing person with NIC ${official.officialNic}: ID ${officialPersonId}`);
+          } else {
+            // Create new person for the official
+            const newPersonResult = await client.query(
+              `INSERT INTO people (first_name, last_name, full_name, nic, passport)
+               VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+              [
+                official.officialName.split(' ')[0] || '',
+                official.officialName.split(' ').slice(1).join(' ') || '',
+                official.officialName,
+                official.officialNic || null,
+                official.officialPassport || null
+              ]
+            );
+            officialPersonId = newPersonResult.rows[0].id;
+            console.log(`Created new person for official: ${official.officialName} with ID ${officialPersonId}`);
+          }
+        } else if (official.officialPassport && official.officialPassport.trim() !== '') {
+          const existingPerson = await client.query(
+            'SELECT id FROM people WHERE passport = $1',
+            [official.officialPassport.trim()]
+          );
+          
+          if (existingPerson.rows.length > 0) {
+            officialPersonId = existingPerson.rows[0].id;
+            console.log(`Found existing person with passport ${official.officialPassport}: ID ${officialPersonId}`);
+          } else {
+            // Create new person for the official
+            const newPersonResult = await client.query(
+              `INSERT INTO people (first_name, last_name, full_name, nic, passport)
+               VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+              [
+                official.officialName.split(' ')[0] || '',
+                official.officialName.split(' ').slice(1).join(' ') || '',
+                official.officialName,
+                official.officialNic || null,
+                official.officialPassport || null
+              ]
+            );
+            officialPersonId = newPersonResult.rows[0].id;
+            console.log(`Created new person for official: ${official.officialName} with ID ${officialPersonId}`);
+          }
+        } else {
+          // Create new person without NIC or passport
+          const newPersonResult = await client.query(
+            `INSERT INTO people (first_name, last_name, full_name, nic, passport)
+             VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+            [
+              official.officialName.split(' ')[0] || '',
+              official.officialName.split(' ').slice(1).join(' ') || '',
+              official.officialName,
+              official.officialNic || null,
+              official.officialPassport || null
+            ]
+          );
+          officialPersonId = newPersonResult.rows[0].id;
+          console.log(`Created new person for official: ${official.officialName} with ID ${officialPersonId}`);
+        }
+
+        // Insert the corrupted official relationship
+        await client.query(
+          `INSERT INTO corrupted_officials (person_id, official_person_id, department, corruption_type, notes)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            id, 
+            officialPersonId, 
+            official.department.trim(), 
+            official.corruptionType || null,
+            official.notes || null
+          ]
+        );
+      }
+    }
+
+    // Insert enemies if provided
+    if (enemies && enemies.individuals && enemies.individuals.length > 0) {
+      console.log('Inserting', enemies.individuals.length, 'enemy individuals for person', id);
+      for (const enemyIndividual of enemies.individuals) {
+        // Skip entries with empty required fields
+        if (!enemyIndividual.enemyName || enemyIndividual.enemyName.trim() === '') {
+          console.log('Skipping enemy individual with empty name');
+          continue;
+        }
+
+        let enemyPersonId = null;
+        
+        // First, try to find or create the enemy in the people table
+        if (enemyIndividual.enemyNic && enemyIndividual.enemyNic.trim() !== '') {
+          const existingPerson = await client.query(
+            'SELECT id FROM people WHERE nic = $1',
+            [enemyIndividual.enemyNic.trim()]
+          );
+          
+          if (existingPerson.rows.length > 0) {
+            enemyPersonId = existingPerson.rows[0].id;
+            console.log(`Found existing person with NIC ${enemyIndividual.enemyNic}: ID ${enemyPersonId}`);
+          } else {
+            // Create new person for the enemy
+            const newPersonResult = await client.query(
+              `INSERT INTO people (first_name, last_name, full_name, nic)
+               VALUES ($1, $2, $3, $4) RETURNING id`,
+              [
+                enemyIndividual.enemyName.split(' ')[0] || '',
+                enemyIndividual.enemyName.split(' ').slice(1).join(' ') || '',
+                enemyIndividual.enemyName,
+                enemyIndividual.enemyNic || null
+              ]
+            );
+            enemyPersonId = newPersonResult.rows[0].id;
+            console.log(`Created new person for enemy: ${enemyIndividual.enemyName} with ID ${enemyPersonId}`);
+          }
+        } else {
+          // Create new person without NIC
+          const newPersonResult = await client.query(
+            `INSERT INTO people (first_name, last_name, full_name, nic)
+             VALUES ($1, $2, $3, $4) RETURNING id`,
+            [
+              enemyIndividual.enemyName.split(' ')[0] || '',
+              enemyIndividual.enemyName.split(' ').slice(1).join(' ') || '',
+              enemyIndividual.enemyName,
+              enemyIndividual.enemyNic || null
+            ]
+          );
+          enemyPersonId = newPersonResult.rows[0].id;
+          console.log(`Created new person for enemy: ${enemyIndividual.enemyName} with ID ${enemyPersonId}`);
+        }
+
+        // Insert the enemy individual relationship
+        await client.query(
+          `INSERT INTO enemy_individuals (person_id, enemy_person_id, relationship_type, threat_level, notes)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            id, 
+            enemyPersonId, 
+            enemyIndividual.relationshipType || null,
+            enemyIndividual.threatLevel || 'Low',
+            enemyIndividual.notes || null
+          ]
+        );
+      }
+    }
+
+    if (enemies && enemies.gangs && enemies.gangs.length > 0) {
+      console.log('Inserting', enemies.gangs.length, 'enemy gangs for person', id);
+      for (const enemyGang of enemies.gangs) {
+        // Skip entries with empty required fields
+        if (!enemyGang.gangName || enemyGang.gangName.trim() === '') {
+          console.log('Skipping enemy gang with empty name');
+          continue;
+        }
+
+        // Insert the enemy gang relationship
+        await client.query(
+          `INSERT INTO enemy_gangs (person_id, gang_name, threat_level, notes)
+           VALUES ($1, $2, $3, $4)`,
+          [
+            id, 
+            enemyGang.gangName.trim(), 
+            enemyGang.threatLevel || 'Low',
+            enemyGang.notes || null
+          ]
         );
       }
     }
     
     await client.query('COMMIT');
+    console.log('✅ Transaction committed successfully for person ID:', id);
     res.json({ message: 'Person updated successfully' });
     
   } catch (err) {
