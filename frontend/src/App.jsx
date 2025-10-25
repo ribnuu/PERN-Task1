@@ -26,19 +26,9 @@ export default function App() {
       height: '',
       religion: '',
       gender: '',
-      dateOfBirth: '',
-      // structured address
-      address: {
-        number: '',
-        street1: '',
-        street2: '',
-        town: '',
-        district: '',
-        province: '',
-        policeArea: '',
-        policeDivision: ''
-      }
+      dateOfBirth: ''
     },
+    addresses: [], // New addresses array for multiple addresses
     socialMedia: [], // {platform, url, username, password}
     occupations: [], // {jobTitle, company, fromDate, toDate, currently}
     lawyers: [], // {lawyerFullName, lawFirmOrCompany, phoneNumber}
@@ -80,6 +70,282 @@ export default function App() {
     'Sabaragamuwa Province': ['Ratnapura','Kegalle']
   };
 
+  // Town to District and Province mapping
+  const townMapping = {
+    // Western Province - Colombo District
+    'Colombo': { district: 'Colombo', province: 'Western Province' },
+    'Dehiwala-Mount Lavinia': { district: 'Colombo', province: 'Western Province' },
+    'Moratuwa': { district: 'Colombo', province: 'Western Province' },
+    'Sri Jayawardenepura Kotte': { district: 'Colombo', province: 'Western Province' },
+    'Kolonnawa': { district: 'Colombo', province: 'Western Province' },
+    'Kelaniya': { district: 'Colombo', province: 'Western Province' },
+    'Kaduwela': { district: 'Colombo', province: 'Western Province' },
+    'Homagama': { district: 'Colombo', province: 'Western Province' },
+    'Maharagama': { district: 'Colombo', province: 'Western Province' },
+    'Nugegoda': { district: 'Colombo', province: 'Western Province' },
+    'Boralesgamuwa': { district: 'Colombo', province: 'Western Province' },
+    'Kotte': { district: 'Colombo', province: 'Western Province' },
+    'Piliyandala': { district: 'Colombo', province: 'Western Province' },
+    'Battaramulla': { district: 'Colombo', province: 'Western Province' },
+    'Rajagiriya': { district: 'Colombo', province: 'Western Province' },
+    'Kotikawatta': { district: 'Colombo', province: 'Western Province' },
+    'Mulleriyawa': { district: 'Colombo', province: 'Western Province' },
+    
+    // Western Province - Gampaha District
+    'Gampaha': { district: 'Gampaha', province: 'Western Province' },
+    'Negombo': { district: 'Gampaha', province: 'Western Province' },
+    'Katunayake': { district: 'Gampaha', province: 'Western Province' },
+    'Ja-Ela': { district: 'Gampaha', province: 'Western Province' },
+    'Wattala': { district: 'Gampaha', province: 'Western Province' },
+    'Minuwangoda': { district: 'Gampaha', province: 'Western Province' },
+    'Kadawatha': { district: 'Gampaha', province: 'Western Province' },
+    'Ragama': { district: 'Gampaha', province: 'Western Province' },
+    'Kandana': { district: 'Gampaha', province: 'Western Province' },
+    'Welisara': { district: 'Gampaha', province: 'Western Province' },
+    'Kiribathgoda': { district: 'Gampaha', province: 'Western Province' },
+    'Nittambuwa': { district: 'Gampaha', province: 'Western Province' },
+    'Veyangoda': { district: 'Gampaha', province: 'Western Province' },
+    'Ganemulla': { district: 'Gampaha', province: 'Western Province' },
+    'Mirigama': { district: 'Gampaha', province: 'Western Province' },
+    'Divulapitiya': { district: 'Gampaha', province: 'Western Province' },
+    'Attanagalla': { district: 'Gampaha', province: 'Western Province' },
+    
+    // Western Province - Kalutara District
+    'Kalutara': { district: 'Kalutara', province: 'Western Province' },
+    'Panadura': { district: 'Kalutara', province: 'Western Province' },
+    'Horana': { district: 'Kalutara', province: 'Western Province' },
+    'Beruwala': { district: 'Kalutara', province: 'Western Province' },
+    'Aluthgama': { district: 'Kalutara', province: 'Western Province' },
+    'Matugama': { district: 'Kalutara', province: 'Western Province' },
+    'Wadduwa': { district: 'Kalutara', province: 'Western Province' },
+    'Bandaragama': { district: 'Kalutara', province: 'Western Province' },
+    'Mathugama': { district: 'Kalutara', province: 'Western Province' },
+    'Ingiriya': { district: 'Kalutara', province: 'Western Province' },
+    'Bulathsinhala': { district: 'Kalutara', province: 'Western Province' },
+    'Palindanuwara': { district: 'Kalutara', province: 'Western Province' },
+    'Agalawatta': { district: 'Kalutara', province: 'Western Province' },
+    'Dodangoda': { district: 'Kalutara', province: 'Western Province' },
+    'Millaniya': { district: 'Kalutara', province: 'Western Province' },
+    
+    // Central Province - Kandy District
+    'Kandy': { district: 'Kandy', province: 'Central Province' },
+    'Gampola': { district: 'Kandy', province: 'Central Province' },
+    'Nawalapitiya': { district: 'Kandy', province: 'Central Province' },
+    'Peradeniya': { district: 'Kandy', province: 'Central Province' },
+    'Katugastota': { district: 'Kandy', province: 'Central Province' },
+    'Akurana': { district: 'Kandy', province: 'Central Province' },
+    'Kadugannawa': { district: 'Kandy', province: 'Central Province' },
+    'Pilimathalawa': { district: 'Kandy', province: 'Central Province' },
+    'Wattegama': { district: 'Kandy', province: 'Central Province' },
+    'Digana': { district: 'Kandy', province: 'Central Province' },
+    'Teldeniya': { district: 'Kandy', province: 'Central Province' },
+    'Kundasale': { district: 'Kandy', province: 'Central Province' },
+    'Galagedara': { district: 'Kandy', province: 'Central Province' },
+    'Daulagala': { district: 'Kandy', province: 'Central Province' },
+    'Harispattuwa': { district: 'Kandy', province: 'Central Province' },
+    
+    // Central Province - Matale District
+    'Matale': { district: 'Matale', province: 'Central Province' },
+    'Dambulla': { district: 'Matale', province: 'Central Province' },
+    'Sigiriya': { district: 'Matale', province: 'Central Province' },
+    'Galewela': { district: 'Matale', province: 'Central Province' },
+    'Ukuwela': { district: 'Matale', province: 'Central Province' },
+    'Rattota': { district: 'Matale', province: 'Central Province' },
+    'Naula': { district: 'Matale', province: 'Central Province' },
+    'Pallepola': { district: 'Matale', province: 'Central Province' },
+    'Yatawatta': { district: 'Matale', province: 'Central Province' },
+    'Laggala': { district: 'Matale', province: 'Central Province' },
+    
+    // Central Province - Nuwara Eliya District
+    'Nuwara Eliya': { district: 'Nuwara Eliya', province: 'Central Province' },
+    'Hatton': { district: 'Nuwara Eliya', province: 'Central Province' },
+    'Nanuoya': { district: 'Nuwara Eliya', province: 'Central Province' },
+    'Talawakelle': { district: 'Nuwara Eliya', province: 'Central Province' },
+    'Nildandahinna': { district: 'Nuwara Eliya', province: 'Central Province' },
+    'Ginigathena': { district: 'Nuwara Eliya', province: 'Central Province' },
+    'Walapane': { district: 'Nuwara Eliya', province: 'Central Province' },
+    'Kotmale': { district: 'Nuwara Eliya', province: 'Central Province' },
+    'Ramboda': { district: 'Nuwara Eliya', province: 'Central Province' },
+    'Bogawantalawa': { district: 'Nuwara Eliya', province: 'Central Province' },
+    'Maskeliya': { district: 'Nuwara Eliya', province: 'Central Province' },
+    'Haggala': { district: 'Nuwara Eliya', province: 'Central Province' },
+    
+    // Southern Province - Galle District
+    'Galle': { district: 'Galle', province: 'Southern Province' },
+    'Hikkaduwa': { district: 'Galle', province: 'Southern Province' },
+    'Ambalangoda': { district: 'Galle', province: 'Southern Province' },
+    'Elpitiya': { district: 'Galle', province: 'Southern Province' },
+    'Bentota': { district: 'Galle', province: 'Southern Province' },
+    'Baddegama': { district: 'Galle', province: 'Southern Province' },
+    'Karapitiya': { district: 'Galle', province: 'Southern Province' },
+    'Ahangama': { district: 'Galle', province: 'Southern Province' },
+    'Habaraduwa': { district: 'Galle', province: 'Southern Province' },
+    'Unawatuna': { district: 'Galle', province: 'Southern Province' },
+    'Batapola': { district: 'Galle', province: 'Southern Province' },
+    'Neluwa': { district: 'Galle', province: 'Southern Province' },
+    'Nagoda': { district: 'Galle', province: 'Southern Province' },
+    'Imaduwa': { district: 'Galle', province: 'Southern Province' },
+    
+    // Southern Province - Matara District
+    'Matara': { district: 'Matara', province: 'Southern Province' },
+    'Weligama': { district: 'Matara', province: 'Southern Province' },
+    'Mirissa': { district: 'Matara', province: 'Southern Province' },
+    'Dikwella': { district: 'Matara', province: 'Southern Province' },
+    'Hakmana': { district: 'Matara', province: 'Southern Province' },
+    'Akuressa': { district: 'Matara', province: 'Southern Province' },
+    'Kamburupitiya': { district: 'Matara', province: 'Southern Province' },
+    'Devinuwara': { district: 'Matara', province: 'Southern Province' },
+    'Gandara': { district: 'Matara', province: 'Southern Province' },
+    'Kekanadurra': { district: 'Matara', province: 'Southern Province' },
+    'Thihagoda': { district: 'Matara', province: 'Southern Province' },
+    'Pitabeddara': { district: 'Matara', province: 'Southern Province' },
+    
+    // Southern Province - Hambantota District
+    'Hambantota': { district: 'Hambantota', province: 'Southern Province' },
+    'Tangalle': { district: 'Hambantota', province: 'Southern Province' },
+    'Tissamaharama': { district: 'Hambantota', province: 'Southern Province' },
+    'Ambalantota': { district: 'Hambantota', province: 'Southern Province' },
+    'Beliatta': { district: 'Hambantota', province: 'Southern Province' },
+    'Weeraketiya': { district: 'Hambantota', province: 'Southern Province' },
+    'Middeniya': { district: 'Hambantota', province: 'Southern Province' },
+    'Walasmulla': { district: 'Hambantota', province: 'Southern Province' },
+    'Kirinda': { district: 'Hambantota', province: 'Southern Province' },
+    'Suriyawewa': { district: 'Hambantota', province: 'Southern Province' },
+    'Angunakolapelessa': { district: 'Hambantota', province: 'Southern Province' },
+    
+    // North Western Province - Kurunegala District
+    'Kurunegala': { district: 'Kurunegala', province: 'North Western Province' },
+    'Kuliyapitiya': { district: 'Kurunegala', province: 'North Western Province' },
+    'Narammala': { district: 'Kurunegala', province: 'North Western Province' },
+    'Wariyapola': { district: 'Kurunegala', province: 'North Western Province' },
+    'Pannala': { district: 'Kurunegala', province: 'North Western Province' },
+    'Mawathagama': { district: 'Kurunegala', province: 'North Western Province' },
+    'Giriulla': { district: 'Kurunegala', province: 'North Western Province' },
+    'Polgahawela': { district: 'Kurunegala', province: 'North Western Province' },
+    'Alawwa': { district: 'Kurunegala', province: 'North Western Province' },
+    'Nikaweratiya': { district: 'Kurunegala', province: 'North Western Province' },
+    'Bingiriya': { district: 'Kurunegala', province: 'North Western Province' },
+    'Hettipola': { district: 'Kurunegala', province: 'North Western Province' },
+    'Ibbagamuwa': { district: 'Kurunegala', province: 'North Western Province' },
+    'Galgamuwa': { district: 'Kurunegala', province: 'North Western Province' },
+    'Maho': { district: 'Kurunegala', province: 'North Western Province' },
+    
+    // North Western Province - Puttalam District
+    'Puttalam': { district: 'Puttalam', province: 'North Western Province' },
+    'Chilaw': { district: 'Puttalam', province: 'North Western Province' },
+    'Wennappuwa': { district: 'Puttalam', province: 'North Western Province' },
+    'Nattandiya': { district: 'Puttalam', province: 'North Western Province' },
+    'Dankotuwa': { district: 'Puttalam', province: 'North Western Province' },
+    'Marawila': { district: 'Puttalam', province: 'North Western Province' },
+    'Anamaduwa': { district: 'Puttalam', province: 'North Western Province' },
+    'Mundel': { district: 'Puttalam', province: 'North Western Province' },
+    'Madampe': { district: 'Puttalam', province: 'North Western Province' },
+    'Pallama': { district: 'Puttalam', province: 'North Western Province' },
+    'Kalpitiya': { district: 'Puttalam', province: 'North Western Province' }
+  };
+
+  // Police Area to Division mapping
+  const policeAreaMapping = {
+    // Western Province - Colombo Division
+    'Fort Police Station': 'Colombo Division',
+    'Slave Island Police Station': 'Colombo Division',
+    'Kollupitiya Police Station': 'Colombo Division',
+    'Bambalapitiya Police Station': 'Colombo Division',
+    'Wellawatta Police Station': 'Colombo Division',
+    'Dehiwala Police Station': 'Colombo Division',
+    'Mount Lavinia Police Station': 'Colombo Division',
+    'Kotahena Police Station': 'Colombo Division',
+    'Grandpass Police Station': 'Colombo Division',
+    'Maradana Police Station': 'Colombo Division',
+    'Dematagoda Police Station': 'Colombo Division',
+    'Borella Police Station': 'Colombo Division',
+    'Narahenpita Police Station': 'Colombo Division',
+    'Wellampitiya Police Station': 'Colombo Division',
+    'Kolonnawa Police Station': 'Colombo Division',
+    'Keselwatta Police Station': 'Colombo Division',
+    
+    // Western Province - Colombo North Division
+    'Peliyagoda Police Station': 'Colombo North Division',
+    'Wattala Police Station': 'Colombo North Division',
+    'Hendala Police Station': 'Colombo North Division',
+    'Ja-Ela Police Station': 'Colombo North Division',
+    'Seeduwa Police Station': 'Colombo North Division',
+    'Katunayake Police Station': 'Colombo North Division',
+    'Kandana Police Station': 'Colombo North Division',
+    'Welisara Police Station': 'Colombo North Division',
+    'Ragama Police Station': 'Colombo North Division',
+    'Kadawatha Police Station': 'Colombo North Division',
+    'Kirillawala Police Station': 'Colombo North Division',
+    
+    // Western Province - Colombo South Division
+    'Mirihana Police Station': 'Colombo South Division',
+    'Nugegoda Police Station': 'Colombo South Division',
+    'Kohuwala Police Station': 'Colombo South Division',
+    'Maharagama Police Station': 'Colombo South Division',
+    'Homagama Police Station': 'Colombo South Division',
+    'Padukka Police Station': 'Colombo South Division',
+    'Pannipitiya Police Station': 'Colombo South Division',
+    'Battaramulla Police Station': 'Colombo South Division',
+    'Kottawa Police Station': 'Colombo South Division',
+    'Piliyandala Police Station': 'Colombo South Division',
+    'Kesbewa Police Station': 'Colombo South Division',
+    
+    // Western Province - Negombo Division
+    'Negombo Police Station': 'Negombo Division',
+    'Katana Police Station': 'Negombo Division',
+    'Kochchikade Police Station': 'Negombo Division',
+    'Dungalpitiya Police Station': 'Negombo Division',
+    'Marawila Police Station': 'Negombo Division',
+    'Dankotuwa Police Station': 'Negombo Division',
+    'Nattandiya Police Station': 'Negombo Division',
+    'Bolawatta Police Station': 'Negombo Division',
+    
+    // Western Province - Gampaha Division
+    'Gampaha Police Station': 'Gampaha Division',
+    'Yakkala Police Station': 'Gampaha Division',
+    'Miriswatta Police Station': 'Gampaha Division',
+    'Kiribathgoda Police Station': 'Gampaha Division',
+    'Kelaniya Police Station': 'Gampaha Division',
+    'Ganemulla Police Station': 'Gampaha Division',
+    'Minuwangoda Police Station': 'Gampaha Division',
+    'Veyangoda Police Station': 'Gampaha Division',
+    'Nittambuwa Police Station': 'Gampaha Division',
+    'Divulapitiya Police Station': 'Gampaha Division',
+    'Mirigama Police Station': 'Gampaha Division',
+    
+    // Western Province - Kalutara Division
+    'Kalutara North Police Station': 'Kalutara Division',
+    'Kalutara South Police Station': 'Kalutara Division',
+    'Panadura Police Station': 'Kalutara Division',
+    'Wadduwa Police Station': 'Kalutara Division',
+    'Bandaragama Police Station': 'Kalutara Division',
+    'Horana Police Station': 'Kalutara Division',
+    'Beruwala Police Station': 'Kalutara Division',
+    'Aluthgama Police Station': 'Kalutara Division',
+    'Matugama Police Station': 'Kalutara Division',
+    'Agalawatta Police Station': 'Kalutara Division',
+    'Ingiriya Police Station': 'Kalutara Division',
+    'Bulathsinhala Police Station': 'Kalutara Division',
+    'Millaniya Police Station': 'Kalutara Division',
+    'Palindanuwara Police Station': 'Kalutara Division',
+    
+    // Central Province - Kandy Division
+    'Kandy Police Station': 'Kandy Division',
+    'Central Police Station (Kandy)': 'Kandy Division',
+    'Peradeniya Police Station': 'Kandy Division',
+    'Katugastota Police Station': 'Kandy Division',
+    'Gampola Police Station': 'Kandy Division',
+    'Nawalapitiya Police Station': 'Kandy Division',
+    'Kadugannawa Police Station': 'Kandy Division',
+    'Pilimathalawa Police Station': 'Kandy Division',
+    'Wattegama Police Station': 'Kandy Division',
+    'Akurana Police Station': 'Kandy Division',
+    'Teldeniya Police Station': 'Kandy Division',
+    'Kundasale Police Station': 'Kandy Division',
+    'Galagedara Police Station': 'Kandy Division',
+    'Harispattuwa Police Station': 'Kandy Division'
+  };
+
   // Family relationship options
   const familyRelationships = [
     { category: 'Immediate Family', options: ['Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Husband', 'Wife'] },
@@ -98,97 +364,35 @@ export default function App() {
 
   // Phone number validation function
   const validatePhoneNumber = (value) => {
-    // Remove spaces and hyphens from input
-    return value.replace(/[\s-]/g, '');
+    // Remove spaces, hyphens, and any other non-numeric characters except +
+    return value.replace(/[^\d+]/g, '');
   };
 
   // Navigation through sections (next/previous)
   // Organize sections into pages - Phone is last section on page 1
-  const sectionPages = [
-    // Page 1: Core sections up to Phone
-    ['personal','family','vehicles','bodyMarks','usedDevices','callHistory','weapons','phone'],
-    // Page 2: Extended sections
-    ['properties','enemies','corruptedOfficials','socialMedia','occupation'],
-    // Page 3: Legal and financial sections
-    ['lawyers','courtCases','activeAreas','relativesOfficials','bankDetails']
+  // All sections in scrollable order - no pagination needed
+  const allSections = [
+    'personal','address','family','vehicles','bodyMarks','usedDevices','callHistory','weapons','phone',
+    'properties','enemies','corruptedOfficials','socialMedia','occupation',
+    'lawyers','courtCases','activeAreas','relativesOfficials','bankDetails'
   ];
   
-  const orderedSections = sectionPages.flat(); // Keep for compatibility
-  const [currentSidebarPage, setCurrentSidebarPage] = useState(0);
+  const orderedSections = allSections; // Keep for compatibility
   
-  // Get sections for current sidebar page
-  const getCurrentPageSections = () => sectionPages[currentSidebarPage] || [];
-  
-  // Find which page contains a section
-  const getPageForSection = (section) => {
-    return sectionPages.findIndex(page => page.includes(section));
-  };
-  
-  // Navigate to next sidebar page
-  const goToNextSidebarPage = () => {
-    if (currentSidebarPage < sectionPages.length - 1) {
-      setCurrentSidebarPage(currentSidebarPage + 1);
-      // Auto-select first section of next page
-      setActiveSection(sectionPages[currentSidebarPage + 1][0]);
-    }
-  };
-  
-  // Navigate to previous sidebar page
-  const goToPreviousSidebarPage = () => {
-    if (currentSidebarPage > 0) {
-      setCurrentSidebarPage(currentSidebarPage - 1);
-      // Auto-select first section of previous page
-      setActiveSection(sectionPages[currentSidebarPage - 1][0]);
-    }
-  };
-  
-  // Update active section and ensure correct page is shown
-  const setActiveSectionAndPage = (section) => {
-    const pageIndex = getPageForSection(section);
-    if (pageIndex !== -1 && pageIndex !== currentSidebarPage) {
-      setCurrentSidebarPage(pageIndex);
-    }
-    setActiveSection(section);
-  };
+  // Simplified navigation without pagination
 
   const goToNextSection = () => {
-    const currentPageSections = getCurrentPageSections();
-    const currentSectionIndex = currentPageSections.indexOf(activeSection);
-    
-    if (currentSectionIndex >= 0 && currentSectionIndex < currentPageSections.length - 1) {
-      // Next section on same page
-      setActiveSection(currentPageSections[currentSectionIndex + 1]);
-    } else if (currentSidebarPage < sectionPages.length - 1) {
-      // Move to first section of next page
-      goToNextSidebarPage();
+    const currentSectionIndex = allSections.indexOf(activeSection);
+    if (currentSectionIndex >= 0 && currentSectionIndex < allSections.length - 1) {
+      setActiveSection(allSections[currentSectionIndex + 1]);
     }
   };
 
   const goToPreviousSection = () => {
-    const currentPageSections = getCurrentPageSections();
-    const currentSectionIndex = currentPageSections.indexOf(activeSection);
-    
+    const currentSectionIndex = allSections.indexOf(activeSection);
     if (currentSectionIndex > 0) {
-      // Previous section on same page
-      setActiveSection(currentPageSections[currentSectionIndex - 1]);
-    } else if (currentSidebarPage > 0) {
-      // Move to last section of previous page
-      const previousPage = currentSidebarPage - 1;
-      setCurrentSidebarPage(previousPage);
-      const previousPageSections = sectionPages[previousPage];
-      setActiveSection(previousPageSections[previousPageSections.length - 1]);
+      setActiveSection(allSections[currentSectionIndex - 1]);
     }
-  };
-
-  // Address field update (structured)
-  const updateAddressField = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      personal: {
-        ...prev.personal,
-        address: { ...prev.personal.address, [field]: value }
-      }
-    }));
   };
 
   // Social media handlers
@@ -359,8 +563,12 @@ export default function App() {
 
   // Function to display call with contact name or phone number
   const getCallDisplayText = (call) => {
-    const contactName = getContactNameByPhone(call.number);
-    return contactName ? `Call: ${contactName}` : `Call: ${call.number}`;
+    if (call.contactName && call.contactNic) {
+      return `Call: ${call.contactName} (${call.contactNic})`;
+    } else if (call.contactName) {
+      return `Call: ${call.contactName}`;
+    }
+    return `Call: ${call.number}`;
   };
 
   const handleSearch = async () => {
@@ -399,35 +607,22 @@ export default function App() {
           religion: data.personal.religion || '',
           gender: data.personal.gender || '',
           dateOfBirth: data.personal.date_of_birth ? data.personal.date_of_birth.split('T')[0] : '',
-          address: (() => {
-            // Handle both string (from database) and object formats
-            if (typeof data.personal.address === 'string' && data.personal.address) {
-              // Handle both old comma format and new pipe format
-              let addressParts;
-              if (data.personal.address.includes('|')) {
-                // New pipe-separated format: "123|Main Street||Colombo|Colombo|Western Province|Police Area|Police Division"
-                addressParts = data.personal.address.split('|');
-              } else {
-                // Old comma-separated format - try to parse as best as possible
-                addressParts = data.personal.address.split(', ');
-              }
-              
-              return {
-                number: addressParts[0] || '',
-                street1: addressParts[1] || '',
-                street2: addressParts[2] || '',
-                town: addressParts[3] || '',
-                district: addressParts[4] || '',
-                province: addressParts[5] || '',
-                policeArea: addressParts[6] || '',
-                policeDivision: addressParts[7] || ''
-              };
-            } else if (typeof data.personal.address === 'object' && data.personal.address !== null) {
-              return data.personal.address;
-            }
-            return { number: '', street1: '', street2: '', town: '', district: '', province: '', policeArea: '', policeDivision: '' };
-          })()
+          address: ''
         },
+        addresses: data.addresses ? data.addresses.map(address => ({
+          id: address.id,
+          number: address.number || '',
+          street1: address.street1 || '',
+          street2: address.street2 || '',
+          town: address.town || '',
+          district: address.district || '',
+          province: address.province || '',
+          policeArea: address.policeArea || '',
+          policeDivision: address.policeDivision || '',
+          fromDate: address.fromDate || '',
+          endDate: address.endDate || '',
+          isCurrentlyActive: address.isCurrentlyActive || false
+        })) : [],
         bank: data.bank ? {
           accountNumber: data.bank.account_number || '',
           bankName: data.bank.bank_name || '',
@@ -566,7 +761,8 @@ export default function App() {
         lawyers: data.lawyers ? data.lawyers.map(l => ({
           lawyerFullName: l.lawyer_full_name || '',
           lawFirmOrCompany: l.law_firm_or_company || '',
-          phoneNumber: l.phone_number || ''
+          phoneNumber: l.phone_number || '',
+          caseNumber: l.case_number || ''
         })) : [],
         courtCases: data.courtCases ? data.courtCases.map(cc => ({
           caseNumber: cc.case_number || '',
@@ -618,7 +814,8 @@ export default function App() {
   const handleAddNew = () => {
     setSelectedPerson(null);
     setFormData({
-      personal: { firstName: '', lastName: '', fullName: '', aliases: '', passport: '', nic: '', height: '', religion: '', gender: '', dateOfBirth: '', address: { number: '', street1: '', street2: '', town: '', district: '', province: '', policeArea: '', policeDivision: '' } },
+      personal: { firstName: '', lastName: '', fullName: '', aliases: '', passport: '', nic: '', height: '', religion: '', gender: '', dateOfBirth: '', address: '' },
+      addresses: [{ number: '', street1: '', street2: '', town: '', district: '', province: '', policeArea: '', policeDivision: '', fromDate: '', endDate: '', isCurrentlyActive: true }],
       bank: { accountNumber: '', bankName: '', branch: '', balance: '' },
       family: [],
       vehicles: [],
@@ -635,7 +832,10 @@ export default function App() {
         sold: [],
         intendedToBuy: []
       },
-      enemies: [],
+      enemies: {
+        individuals: [],
+        gangs: []
+      },
       corruptedOfficials: [],
       lawyers: [],
       courtCases: [],
@@ -710,6 +910,7 @@ export default function App() {
       // Clear any cached data and force a fresh reload
       setFormData({
         personal: { firstName: '', lastName: '', fullName: '', aliases: '', passport: '', nic: '', height: '', religion: '', gender: '', dateOfBirth: '', address: '' },
+        addresses: [],
         bank: { accountNumber: '', bankName: '', branch: '', balance: '' },
         family: [],
         vehicles: [],
@@ -720,7 +921,10 @@ export default function App() {
         phones: [],
         properties: { currentlyInPossession: [], sold: [], intendedToBuy: [] },
         gangDetails: [],
-        enemies: [],
+        enemies: {
+          individuals: [],
+          gangs: []
+        },
         corruptedOfficials: [],
         socialMedia: [],
         occupations: [],
@@ -965,13 +1169,19 @@ export default function App() {
 
   // Call history handlers
   const addCallHistory = () => {
+    // Get current datetime in the format required for datetime-local input
+    const now = new Date();
+    const defaultDateTime = now.toISOString().slice(0, 16); // Format: YYYY-MM-DDTHH:mm
+    
     setFormData(prev => ({
       ...prev,
       callHistory: [...prev.callHistory, { 
         device: '', 
         callType: '', 
         number: '', 
-        dateTime: '' 
+        dateTime: defaultDateTime,
+        contactName: '',
+        contactNic: ''
       }]
     }));
   };
@@ -980,7 +1190,13 @@ export default function App() {
     setFormData(prev => ({
       ...prev,
       callHistory: prev.callHistory.map((call, i) => 
-        i === index ? { ...call, [field]: value } : call
+        i === index ? { 
+          ...call, 
+          [field]: value,
+          // Preserve existing contact information when updating non-number fields
+          contactName: call.contactName || '',
+          contactNic: call.contactNic || ''
+        } : call
       )
     }));
   };
@@ -1276,6 +1492,263 @@ export default function App() {
     }
   };
 
+  // Auto-fill functions for person lookup
+  const searchPersonByIdentifier = async (identifier) => {
+    if (!identifier || identifier.length < 3) return null;
+    
+    try {
+      const response = await axios.get(`${API_URL}/search?query=${encodeURIComponent(identifier)}`);
+      const results = response.data;
+      
+      // Find exact match by NIC or Passport
+      const exactMatch = results.find(person => 
+        person.nic === identifier || person.passport === identifier
+      );
+      
+      if (exactMatch) {
+        return {
+          fullName: exactMatch.full_name || `${exactMatch.first_name} ${exactMatch.last_name}`,
+          nic: exactMatch.nic,
+          passport: exactMatch.passport
+        };
+      }
+      
+      // Find match by full name
+      const nameMatch = results.find(person => 
+        person.full_name === identifier || 
+        `${person.first_name} ${person.last_name}` === identifier
+      );
+      
+      if (nameMatch) {
+        return {
+          fullName: nameMatch.full_name || `${nameMatch.first_name} ${nameMatch.last_name}`,
+          nic: nameMatch.nic,
+          passport: nameMatch.passport
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error searching person:', error);
+      return null;
+    }
+  };
+
+  // Auto-fill for Corrupted Officials
+  const handleCorruptedOfficialAutoFill = async (index, field, value) => {
+    updateCorruptedOfficial(index, field, value);
+    
+    if ((field === 'officialNic' || field === 'officialPassport') && value) {
+      const personData = await searchPersonByIdentifier(value);
+      if (personData) {
+        updateCorruptedOfficial(index, 'officialName', personData.fullName);
+        if (field === 'officialNic' && personData.passport) {
+          updateCorruptedOfficial(index, 'officialPassport', personData.passport);
+        }
+        if (field === 'officialPassport' && personData.nic) {
+          updateCorruptedOfficial(index, 'officialNic', personData.nic);
+        }
+      }
+    } else if (field === 'officialName' && value) {
+      const personData = await searchPersonByIdentifier(value);
+      if (personData) {
+        if (personData.nic) updateCorruptedOfficial(index, 'officialNic', personData.nic);
+        if (personData.passport) updateCorruptedOfficial(index, 'officialPassport', personData.passport);
+      }
+    }
+  };
+
+  // Auto-fill for Enemy Individuals
+  const handleEnemyAutoFill = async (index, field, value) => {
+    updateEnemyIndividual(index, field, value);
+    
+    if (field === 'enemyNic' && value) {
+      const personData = await searchPersonByIdentifier(value);
+      if (personData) {
+        updateEnemyIndividual(index, 'enemyName', personData.fullName);
+      }
+    } else if (field === 'enemyName' && value) {
+      const personData = await searchPersonByIdentifier(value);
+      if (personData) {
+        if (personData.nic) updateEnemyIndividual(index, 'enemyNic', personData.nic);
+      }
+    }
+  };
+
+  // Auto-fill for Relatives Officials
+  const handleRelativesOfficialAutoFill = async (index, field, value) => {
+    updateRelativesOfficial(index, field, value);
+    
+    if ((field === 'nicNumber' || field === 'passportNumber') && value) {
+      const personData = await searchPersonByIdentifier(value);
+      if (personData) {
+        updateRelativesOfficial(index, 'fullName', personData.fullName);
+        if (field === 'nicNumber' && personData.passport) {
+          updateRelativesOfficial(index, 'passportNumber', personData.passport);
+        }
+        if (field === 'passportNumber' && personData.nic) {
+          updateRelativesOfficial(index, 'nicNumber', personData.nic);
+        }
+      }
+    } else if (field === 'fullName' && value) {
+      const personData = await searchPersonByIdentifier(value);
+      if (personData) {
+        if (personData.nic) updateRelativesOfficial(index, 'nicNumber', personData.nic);
+        if (personData.passport) updateRelativesOfficial(index, 'passportNumber', personData.passport);
+      }
+    }
+  };
+
+  // Auto-fill for Property Owners
+  const handlePropertyOwnerAutoFill = async (section, index, field, value) => {
+    updateProperty(section, index, field, value);
+    
+    if ((field === 'ownerNic' || field === 'ownerPassport') && value) {
+      const personData = await searchPersonByIdentifier(value);
+      if (personData) {
+        updateProperty(section, index, 'ownerFullName', personData.fullName);
+        if (field === 'ownerNic' && personData.passport) {
+          updateProperty(section, index, 'ownerPassport', personData.passport);
+        }
+        if (field === 'ownerPassport' && personData.nic) {
+          updateProperty(section, index, 'ownerNic', personData.nic);
+        }
+      }
+    } else if (field === 'ownerFullName' && value) {
+      const personData = await searchPersonByIdentifier(value);
+      if (personData) {
+        if (personData.nic) updateProperty(section, index, 'ownerNic', personData.nic);
+        if (personData.passport) updateProperty(section, index, 'ownerPassport', personData.passport);
+      }
+    }
+  };
+
+  // Auto-fill for Call History phone numbers
+  const handleCallHistoryAutoFill = async (index, field, value) => {    
+    // Update the field first
+    updateCallHistory(index, field, value);
+    
+    // If it's a phone number field and has a value, search for the person
+    if (field === 'number' && value && value.length >= 8) {
+      try {
+        const response = await fetch(`http://localhost:5000/api/search-by-phone/${value}`);
+        if (response.ok) {
+          const data = await response.json();
+          
+          if (data.found) {
+            // Update call history with contact information using proper state update
+            setFormData(prev => ({
+              ...prev,
+              callHistory: prev.callHistory.map((call, i) => 
+                i === index ? { 
+                  ...call, 
+                  contactName: data.person.fullName,
+                  contactNic: data.person.nic 
+                } : call
+              )
+            }));
+          } else {
+            // Clear contact information if no match found
+            setFormData(prev => ({
+              ...prev,
+              callHistory: prev.callHistory.map((call, i) => 
+                i === index ? { 
+                  ...call, 
+                  contactName: '',
+                  contactNic: '' 
+                } : call
+              )
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('Error searching by phone number:', error);
+        // Clear contact info on error
+        setFormData(prev => ({
+          ...prev,
+          callHistory: prev.callHistory.map((call, i) => 
+            i === index ? { 
+              ...call, 
+              contactName: '',
+              contactNic: '' 
+            } : call
+          )
+        }));
+      }
+    } else if (field === 'number' && (!value || value.length < 8)) {
+      // Clear contact info if phone number is too short or empty
+      setFormData(prev => ({
+        ...prev,
+        callHistory: prev.callHistory.map((call, i) => 
+          i === index ? { 
+            ...call, 
+            contactName: '',
+            contactNic: '' 
+          } : call
+        )
+      }));
+    }
+  };
+
+  // Helper functions for cross-section updates
+  const getAllGangNames = () => {
+    const gangDetailsNames = formData.gangDetails ? formData.gangDetails.map(g => g.gangName).filter(name => name && name.trim()) : [];
+    const enemyGangNames = formData.enemies?.gangs ? formData.enemies.gangs.map(g => g.gangName).filter(name => name && name.trim()) : [];
+    return [...new Set([...gangDetailsNames, ...enemyGangNames])]; // Remove duplicates
+  };
+
+  const getAllCaseNumbers = () => {
+    return formData.courtCases ? formData.courtCases.map(cc => cc.caseNumber).filter(caseNum => caseNum && caseNum.trim()) : [];
+  };
+
+  // Enhanced gang detail update with enemy gang sync
+  const updateGangDetailWithSync = (index, field, value) => {
+    updateGangDetail(index, field, value);
+    
+    // If gang name is updated, sync to enemy gangs dropdown options
+    if (field === 'gangName' && value) {
+      // This will be used by the dropdown options
+      // No need to update enemy gangs directly, just ensure the dropdown shows updated options
+    }
+  };
+
+  // Enhanced enemy gang update with gang details sync
+  const updateEnemyGangWithSync = (index, field, value) => {
+    updateEnemyGang(index, field, value);
+    
+    // If gang name is updated, optionally sync back to gang details
+    if (field === 'gangName' && value) {
+      // Check if this gang name exists in gang details, if not and user wants, add it
+      const existingGangNames = formData.gangDetails ? formData.gangDetails.map(g => g.gangName) : [];
+      if (!existingGangNames.includes(value)) {
+        // For now, we'll just make it available in dropdowns
+        // Could add logic here to automatically add to gang details if desired
+      }
+    }
+  };
+
+  // Enhanced lawyer update with case number dropdown
+  const addLawyerWithCaseSelect = () => {
+    setFormData(prev => ({
+      ...prev,
+      lawyers: [...(prev.lawyers || []), {
+        lawyerFullName: '',
+        lawFirmOrCompany: '',
+        phoneNumber: '',
+        caseNumber: '' // Add case number field
+      }]
+    }));
+  };
+
+  const updateLawyerWithCaseNumber = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      lawyers: prev.lawyers.map((lawyer, i) => 
+        i === index ? { ...lawyer, [field]: value } : lawyer
+      )
+    }));
+  };
+
   return (
     <div style={{ display: 'flex', height: '100vh', fontFamily: 'Arial, sans-serif' }}>
       {/* LEFT PANEL */}
@@ -1304,58 +1777,25 @@ export default function App() {
           fontSize: '12px', 
           color: '#bdc3c7' 
         }}>
-          Page {currentSidebarPage + 1} of {sectionPages.length}
+          All Sections
         </div>
-        
-        {/* Sidebar page navigation */}
+        {/* Scrollable navigation sections */}
         <div style={{ 
           display: 'flex', 
-          justifyContent: 'space-between', 
-          marginBottom: '15px', 
-          gap: '5px' 
+          flexDirection: 'column', 
+          gap: '10px', 
+          flex: '1',
+          overflowY: 'auto',
+          maxHeight: 'calc(100vh - 150px)',
+          paddingRight: '8px',
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#4a5568 #2d3748'
         }}>
-          <button
-            onClick={goToPreviousSidebarPage}
-            disabled={currentSidebarPage === 0}
-            style={{
-              flex: 1,
-              padding: '8px',
-              backgroundColor: currentSidebarPage === 0 ? '#7f8c8d' : '#95a5a6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '3px',
-              cursor: currentSidebarPage === 0 ? 'not-allowed' : 'pointer',
-              fontSize: '11px',
-              opacity: currentSidebarPage === 0 ? 0.5 : 1
-            }}
-          >
-            ← Prev Page
-          </button>
-          <button
-            onClick={goToNextSidebarPage}
-            disabled={currentSidebarPage === sectionPages.length - 1}
-            style={{
-              flex: 1,
-              padding: '8px',
-              backgroundColor: currentSidebarPage === sectionPages.length - 1 ? '#7f8c8d' : '#95a5a6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '3px',
-              cursor: currentSidebarPage === sectionPages.length - 1 ? 'not-allowed' : 'pointer',
-              fontSize: '11px',
-              opacity: currentSidebarPage === sectionPages.length - 1 ? 0.5 : 1
-            }}
-          >
-            Next Page →
-          </button>
-        </div>
-
-        {/* Dynamic navigation sections for current page */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: '1' }}>
-          {getCurrentPageSections().map((section) => {
+          {allSections.map((section) => {
             // Define section titles
             const sectionTitles = {
               personal: 'Personal Details',
+              address: 'Address Details',
               family: 'Family & Friends',
               vehicles: 'Vehicle Details',
               bodyMarks: 'Body Marks',
@@ -1378,7 +1818,7 @@ export default function App() {
             return (
               <button
                 key={section}
-                onClick={() => setActiveSectionAndPage(section)}
+                onClick={() => setActiveSection(section)}
                 style={{
                   padding: '12px',
                   backgroundColor: activeSection === section ? '#34495e' : 'transparent',
@@ -1404,6 +1844,7 @@ export default function App() {
         <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
           <h2 style={{ marginBottom: '20px', color: '#2c3e50' }}>
             {activeSection === 'personal' && 'Personal Details'}
+            {activeSection === 'address' && 'Address Details'}
             {activeSection === 'family' && 'Family Members & Friends'}
             {activeSection === 'vehicles' && 'VEHICLES Details'}
             {activeSection === 'bodyMarks' && 'BODY MARKS Details'}
@@ -1557,53 +1998,21 @@ export default function App() {
                   </div>
                   <div>
                     <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Religion</label>
-                    <input
-                      type="text"
+                    <select
                       value={formData.personal.religion}
                       onChange={(e) => updatePersonalField('religion', e.target.value)}
                       style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
-                    />
+                    >
+                      <option value="">Select Religion</option>
+                      <option value="Buddhism">Buddhism</option>
+                      <option value="Hinduism">Hinduism</option>
+                      <option value="Islam">Islam</option>
+                      <option value="Christianity">Christianity</option>
+                      <option value="Others">Others</option>
+                      <option value="No Religion">No Religion</option>
+                    </select>
                   </div>
-                  <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Number</label>
-                      <input type="text" value={formData.personal.address.number} onChange={(e) => updateAddressField('number', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Street Name 1</label>
-                      <input type="text" value={formData.personal.address.street1} onChange={(e) => updateAddressField('street1', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Street Name 2</label>
-                      <input type="text" value={formData.personal.address.street2} onChange={(e) => updateAddressField('street2', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Town</label>
-                      <input type="text" value={formData.personal.address.town} onChange={(e) => updateAddressField('town', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Province</label>
-                      <select value={formData.personal.address.province} onChange={(e) => { updateAddressField('province', e.target.value); updateAddressField('district', ''); }} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}>
-                        <option value="">Select Province</option>
-                        {Object.keys(provinceDistricts).map((p) => (<option key={p} value={p}>{p}</option>))}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>District</label>
-                      <select value={formData.personal.address.district} onChange={(e) => updateAddressField('district', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}>
-                        <option value="">Select District</option>
-                        {(provinceDistricts[formData.personal.address.province] || []).map(d => (<option key={d} value={d}>{d}</option>))}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Police Area</label>
-                      <input type="text" value={formData.personal.address.policeArea} onChange={(e) => updateAddressField('policeArea', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Police Division</label>
-                      <input type="text" value={formData.personal.address.policeDivision} onChange={(e) => updateAddressField('policeDivision', e.target.value)} style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} />
-                    </div>
-                  </div>
+
                 </div>
               )}
 
@@ -1679,7 +2088,7 @@ export default function App() {
                           <input
                             type="text"
                             value={gang.gangName}
-                            onChange={(e) => updateGangDetail(index, 'gangName', e.target.value)}
+                            onChange={(e) => updateGangDetailWithSync(index, 'gangName', e.target.value)}
                             style={{
                               width: '100%',
                               padding: '10px',
@@ -1772,7 +2181,261 @@ export default function App() {
             </div>
           )}
 
+          {activeSection === 'address' && (
+            <div>
+              <button
+                onClick={() => {
+                  setFormData({
+                    ...formData,
+                    addresses: [...formData.addresses, {
+                      number: '',
+                      street1: '',
+                      street2: '',
+                      town: '',
+                      district: '',
+                      province: '',
+                      policeArea: '',
+                      policeDivision: '',
+                      fromDate: '',
+                      endDate: '',
+                      isCurrentlyActive: false
+                    }]
+                  });
+                }}
+                style={{
+                  padding: '12px 24px',
+                  marginBottom: '20px',
+                  backgroundColor: '#3498db',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 'bold'
+                }}
+              >
+                + Add Address
+              </button>
+              
+              {formData.addresses.map((address, index) => (
+                <div key={index} style={{ 
+                  marginBottom: '25px', 
+                  padding: '20px', 
+                  backgroundColor: '#f8f9fa', 
+                  borderRadius: '8px',
+                  border: '1px solid #e9ecef'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <h4 style={{ margin: 0, color: '#2c3e50' }}>
+                      Address {index + 1}
+                    </h4>
+                    <button
+                      onClick={() => {
+                        setFormData({
+                          ...formData,
+                          addresses: formData.addresses.filter((_, i) => i !== index)
+                        });
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        backgroundColor: '#e74c3c',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
 
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Number</label>
+                      <input 
+                        type="text" 
+                        value={address.number} 
+                        onChange={(e) => {
+                          const newAddresses = [...formData.addresses];
+                          newAddresses[index].number = e.target.value;
+                          setFormData({ ...formData, addresses: newAddresses });
+                        }} 
+                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Street Name 1</label>
+                      <input 
+                        type="text" 
+                        value={address.street1} 
+                        onChange={(e) => {
+                          const newAddresses = [...formData.addresses];
+                          newAddresses[index].street1 = e.target.value;
+                          setFormData({ ...formData, addresses: newAddresses });
+                        }} 
+                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Street Name 2</label>
+                      <input 
+                        type="text" 
+                        value={address.street2} 
+                        onChange={(e) => {
+                          const newAddresses = [...formData.addresses];
+                          newAddresses[index].street2 = e.target.value;
+                          setFormData({ ...formData, addresses: newAddresses });
+                        }} 
+                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Town</label>
+                      <input 
+                        type="text" 
+                        value={address.town} 
+                        onChange={(e) => {
+                          const newAddresses = [...formData.addresses];
+                          const townValue = e.target.value;
+                          newAddresses[index].town = townValue;
+                          
+                          // Auto-fill district and province based on town selection
+                          if (townMapping[townValue]) {
+                            newAddresses[index].district = townMapping[townValue].district;
+                            newAddresses[index].province = townMapping[townValue].province;
+                          }
+                          
+                          setFormData({ ...formData, addresses: newAddresses });
+                        }} 
+                        list={`towns-${index}`}
+                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                      />
+                      <datalist id={`towns-${index}`}>
+                        {Object.keys(townMapping).map(town => (
+                          <option key={town} value={town} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Province</label>
+                      <select 
+                        value={address.province} 
+                        onChange={(e) => {
+                          const newAddresses = [...formData.addresses];
+                          newAddresses[index].province = e.target.value;
+                          newAddresses[index].district = '';
+                          setFormData({ ...formData, addresses: newAddresses });
+                        }} 
+                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                      >
+                        <option value="">Select Province</option>
+                        {Object.keys(provinceDistricts).map((p) => (<option key={p} value={p}>{p}</option>))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>District</label>
+                      <select 
+                        value={address.district} 
+                        onChange={(e) => {
+                          const newAddresses = [...formData.addresses];
+                          newAddresses[index].district = e.target.value;
+                          setFormData({ ...formData, addresses: newAddresses });
+                        }} 
+                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                      >
+                        <option value="">Select District</option>
+                        {(provinceDistricts[address.province] || []).map(d => (<option key={d} value={d}>{d}</option>))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Police Area</label>
+                      <input 
+                        type="text" 
+                        value={address.policeArea} 
+                        onChange={(e) => {
+                          const newAddresses = [...formData.addresses];
+                          const policeAreaValue = e.target.value;
+                          newAddresses[index].policeArea = policeAreaValue;
+                          
+                          // Auto-fill police division based on police area selection
+                          if (policeAreaMapping[policeAreaValue]) {
+                            newAddresses[index].policeDivision = policeAreaMapping[policeAreaValue];
+                          }
+                          
+                          setFormData({ ...formData, addresses: newAddresses });
+                        }} 
+                        list={`police-areas-${index}`}
+                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                      />
+                      <datalist id={`police-areas-${index}`}>
+                        {Object.keys(policeAreaMapping).map(policeArea => (
+                          <option key={policeArea} value={policeArea} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Police Division</label>
+                      <input 
+                        type="text" 
+                        value={address.policeDivision} 
+                        onChange={(e) => {
+                          const newAddresses = [...formData.addresses];
+                          newAddresses[index].policeDivision = e.target.value;
+                          setFormData({ ...formData, addresses: newAddresses });
+                        }} 
+                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>From Date</label>
+                      <input 
+                        type="date" 
+                        value={address.fromDate} 
+                        onChange={(e) => {
+                          const newAddresses = [...formData.addresses];
+                          newAddresses[index].fromDate = e.target.value;
+                          setFormData({ ...formData, addresses: newAddresses });
+                        }} 
+                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                      />
+                    </div>
+                    {!address.isCurrentlyActive && (
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>End Date</label>
+                        <input 
+                          type="date" 
+                          value={address.endDate} 
+                          onChange={(e) => {
+                            const newAddresses = [...formData.addresses];
+                            newAddresses[index].endDate = e.target.value;
+                            setFormData({ ...formData, addresses: newAddresses });
+                          }} 
+                          style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                        />
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <input 
+                        type="checkbox" 
+                        id={`currently-active-${index}`}
+                        checked={address.isCurrentlyActive} 
+                        onChange={(e) => {
+                          const newAddresses = [...formData.addresses];
+                          newAddresses[index].isCurrentlyActive = e.target.checked;
+                          if (e.target.checked) {
+                            newAddresses[index].endDate = '';
+                          }
+                          setFormData({ ...formData, addresses: newAddresses });
+                        }} 
+                      />
+                      <label htmlFor={`currently-active-${index}`} style={{ fontWeight: 'bold' }}>Currently Active</label>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {activeSection === 'family' && (
             <div>
@@ -2531,7 +3194,21 @@ export default function App() {
                       </label>
                       <select
                         value={call.device}
-                        onChange={(e) => updateCallHistory(index, 'device', e.target.value)}
+                        onChange={(e) => {
+                          // Update device while preserving contact information
+                          setFormData(prev => ({
+                            ...prev,
+                            callHistory: prev.callHistory.map((c, i) => 
+                              i === index ? { 
+                                ...c, 
+                                device: e.target.value,
+                                // Preserve existing contact info
+                                contactName: c.contactName || '',
+                                contactNic: c.contactNic || ''
+                              } : c
+                            )
+                          }));
+                        }}
                         style={{
                           width: '100%',
                           padding: '10px',
@@ -2560,7 +3237,21 @@ export default function App() {
                       </label>
                       <select
                         value={call.callType}
-                        onChange={(e) => updateCallHistory(index, 'callType', e.target.value)}
+                        onChange={(e) => {
+                          // Update call type while preserving contact information
+                          setFormData(prev => ({
+                            ...prev,
+                            callHistory: prev.callHistory.map((c, i) => 
+                              i === index ? { 
+                                ...c, 
+                                callType: e.target.value,
+                                // Preserve existing contact info
+                                contactName: c.contactName || '',
+                                contactNic: c.contactNic || ''
+                              } : c
+                            )
+                          }));
+                        }}
                         style={{
                           width: '100%',
                           padding: '10px',
@@ -2589,7 +3280,21 @@ export default function App() {
                         value={call.number}
                         onChange={(e) => {
                           const cleanedNumber = validatePhoneNumber(e.target.value);
-                          updateCallHistory(index, 'number', cleanedNumber);
+                          handleCallHistoryAutoFill(index, 'number', cleanedNumber);
+                        }}
+                        onBlur={(e) => {
+                          // Also trigger auto-fill on blur to catch paste operations
+                          const cleanedNumber = validatePhoneNumber(e.target.value);
+                          if (cleanedNumber !== call.number) {
+                            handleCallHistoryAutoFill(index, 'number', cleanedNumber);
+                          }
+                        }}
+                        onPaste={(e) => {
+                          // Handle paste events with a slight delay to ensure the value is updated
+                          setTimeout(() => {
+                            const cleanedNumber = validatePhoneNumber(e.target.value);
+                            handleCallHistoryAutoFill(index, 'number', cleanedNumber);
+                          }, 100);
                         }}
                         style={{
                           width: '100%',
@@ -2600,16 +3305,61 @@ export default function App() {
                         }}
                         required
                       />
+                      {/* Show contact information or searching status */}
+                      {call.number && call.number.length >= 8 && (
+                        <div style={{ marginTop: '8px' }}>
+                          {call.contactName ? (
+                            <div style={{ 
+                              padding: '8px 12px', 
+                              backgroundColor: '#e8f5e8', 
+                              border: '1px solid #c3e6c3', 
+                              borderRadius: '5px',
+                              fontSize: '13px'
+                            }}>
+                              <strong>📞 Contact Found:</strong><br />
+                              <span style={{ color: '#2c5530' }}>
+                                <strong>Name:</strong> {call.contactName}<br />
+                                <strong>NIC:</strong> {call.contactNic}
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ 
+                              padding: '6px 10px', 
+                              backgroundColor: '#fff3cd', 
+                              border: '1px solid #ffeeba', 
+                              borderRadius: '5px',
+                              fontSize: '12px',
+                              color: '#856404'
+                            }}>
+                              ⚠️ No contact found for this number
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div>
                       <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
-                        Date & Time *
+                        Date & Time
                       </label>
                       <input
                         type="datetime-local"
-                        value={call.dateTime}
-                        onChange={(e) => updateCallHistory(index, 'dateTime', e.target.value)}
+                        value={call.dateTime || ''}
+                        onChange={(e) => {
+                          // Update dateTime while preserving contact information
+                          setFormData(prev => ({
+                            ...prev,
+                            callHistory: prev.callHistory.map((c, i) => 
+                              i === index ? { 
+                                ...c, 
+                                dateTime: e.target.value,
+                                // Preserve existing contact info
+                                contactName: c.contactName || '',
+                                contactNic: c.contactNic || ''
+                              } : c
+                            )
+                          }));
+                        }}
                         style={{
                           width: '100%',
                           padding: '10px',
@@ -2617,7 +3367,6 @@ export default function App() {
                           borderRadius: '5px',
                           fontSize: '14px'
                         }}
-                        required
                       />
                     </div>
                   </div>
@@ -3204,6 +3953,69 @@ export default function App() {
                           />
                         </div>
 
+                        {/* Property Owner Information */}
+                        <div style={{ gridColumn: '1 / -1', marginTop: '15px', marginBottom: '15px' }}>
+                          <h5 style={{ margin: '0 0 15px 0', color: '#2c3e50', borderBottom: '2px solid #e9ecef', paddingBottom: '8px' }}>
+                            Property Owner Information (Optional)
+                          </h5>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                                Owner Full Name <small style={{ color: '#666' }}>(Auto-fills from NIC/Passport)</small>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Enter owner's full name"
+                                value={property.ownerFullName || ''}
+                                onChange={(e) => handlePropertyOwnerAutoFill('currentlyInPossession', index, 'ownerFullName', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '5px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                                Owner NIC Number <small style={{ color: '#666' }}>(Auto-fills name)</small>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Enter NIC number"
+                                value={property.ownerNic || ''}
+                                onChange={(e) => handlePropertyOwnerAutoFill('currentlyInPossession', index, 'ownerNic', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '5px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                                Owner Passport Number <small style={{ color: '#666' }}>(Auto-fills name)</small>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Enter passport number"
+                                value={property.ownerPassport || ''}
+                                onChange={(e) => handlePropertyOwnerAutoFill('currentlyInPossession', index, 'ownerPassport', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '5px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
                         <div style={{ gridColumn: '1 / -1' }}>
                           <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
                             Description
@@ -3690,6 +4502,69 @@ export default function App() {
                           />
                         </div>
 
+                        {/* Property Owner Information */}
+                        <div style={{ gridColumn: '1 / -1', marginTop: '15px', marginBottom: '15px' }}>
+                          <h5 style={{ margin: '0 0 15px 0', color: '#2c3e50', borderBottom: '2px solid #e9ecef', paddingBottom: '8px' }}>
+                            Property Owner Information (Optional)
+                          </h5>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                                Owner Full Name <small style={{ color: '#666' }}>(Auto-fills from NIC/Passport)</small>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Enter owner's full name"
+                                value={property.ownerFullName || ''}
+                                onChange={(e) => handlePropertyOwnerAutoFill('intendedToBuy', index, 'ownerFullName', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '5px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                                Owner NIC Number <small style={{ color: '#666' }}>(Auto-fills name)</small>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Enter NIC number"
+                                value={property.ownerNic || ''}
+                                onChange={(e) => handlePropertyOwnerAutoFill('intendedToBuy', index, 'ownerNic', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '5px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
+                                Owner Passport Number <small style={{ color: '#666' }}>(Auto-fills name)</small>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Enter passport number"
+                                value={property.ownerPassport || ''}
+                                onChange={(e) => handlePropertyOwnerAutoFill('intendedToBuy', index, 'ownerPassport', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '5px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
                         <div style={{ gridColumn: '1 / -1' }}>
                           <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
                             Description
@@ -3815,7 +4690,7 @@ export default function App() {
                     </button>
                   </div>
 
-                  {formData.enemies.individuals.length === 0 && (
+                  {(formData.enemies.individuals || []).length === 0 && (
                     <div style={{
                       padding: '40px',
                       textAlign: 'center',
@@ -3829,7 +4704,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {formData.enemies.individuals.map((enemy, index) => (
+                  {(formData.enemies.individuals || []).map((enemy, index) => (
                     <div key={index} style={{
                       marginBottom: '25px',
                       padding: '20px',
@@ -3860,12 +4735,12 @@ export default function App() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
                         <div>
                           <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
-                            Enemy Name *
+                            Enemy Name * <small style={{ color: '#666' }}>(Auto-fills from NIC/Passport)</small>
                           </label>
                           <input
                             type="text"
                             value={enemy.enemyName}
-                            onChange={(e) => updateEnemyIndividual(index, 'enemyName', e.target.value)}
+                            onChange={(e) => handleEnemyAutoFill(index, 'enemyName', e.target.value)}
                             style={{
                               width: '100%',
                               padding: '10px',
@@ -3879,12 +4754,12 @@ export default function App() {
                         </div>
                         <div>
                           <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
-                            Enemy NIC
+                            Enemy NIC <small style={{ color: '#666' }}>(Auto-fills name)</small>
                           </label>
                           <input
                             type="text"
                             value={enemy.enemyNic}
-                            onChange={(e) => updateEnemyIndividual(index, 'enemyNic', e.target.value)}
+                            onChange={(e) => handleEnemyAutoFill(index, 'enemyNic', e.target.value)}
                             style={{
                               width: '100%',
                               padding: '10px',
@@ -3988,7 +4863,7 @@ export default function App() {
                     </button>
                   </div>
 
-                  {formData.enemies.gangs.length === 0 && (
+                  {(formData.enemies.gangs || []).length === 0 && (
                     <div style={{
                       padding: '40px',
                       textAlign: 'center',
@@ -4002,7 +4877,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {formData.enemies.gangs.map((gang, index) => (
+                  {(formData.enemies.gangs || []).map((gang, index) => (
                     <div key={index} style={{
                       marginBottom: '25px',
                       padding: '20px',
@@ -4037,7 +4912,7 @@ export default function App() {
                           </label>
                           <select
                             value={gang.gangName}
-                            onChange={(e) => updateEnemyGang(index, 'gangName', e.target.value)}
+                            onChange={(e) => updateEnemyGangWithSync(index, 'gangName', e.target.value)}
                             style={{
                               width: '100%',
                               padding: '10px',
@@ -4048,6 +4923,9 @@ export default function App() {
                             required
                           >
                             <option value="">Select Gang</option>
+                            {getAllGangNames().map((gangName, idx) => (
+                              <option key={idx} value={gangName}>{gangName}</option>
+                            ))}
                             <option value="Black Serpents">Black Serpents</option>
                             <option value="Iron Wolves">Iron Wolves</option>
                             <option value="Red Dragons">Red Dragons</option>
@@ -4057,7 +4935,8 @@ export default function App() {
                           {gang.gangName === 'Other' && (
                             <input
                               type="text"
-                              placeholder="Enter gang name"
+                              placeholder="Enter custom gang name"
+                              value={gang.customGangName || ''}
                               style={{
                                 width: '100%',
                                 marginTop: '5px',
@@ -4066,7 +4945,15 @@ export default function App() {
                                 borderRadius: '5px',
                                 fontSize: '14px'
                               }}
-                              onChange={(e) => updateEnemyGang(index, 'customGangName', e.target.value)}
+                              onChange={(e) => {
+                                updateEnemyGangWithSync(index, 'customGangName', e.target.value);
+                              }}
+                              onBlur={(e) => {
+                                // Only update gangName when user finishes typing
+                                if (e.target.value && e.target.value.trim()) {
+                                  updateEnemyGangWithSync(index, 'gangName', e.target.value);
+                                }
+                              }}
                             />
                           )}
                         </div>
@@ -4213,12 +5100,12 @@ export default function App() {
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
-                        Full Name *
+                        Full Name * <small style={{ color: '#666' }}>(Auto-fills from NIC/Passport)</small>
                       </label>
                       <input
                         type="text"
                         value={official.officialName}
-                        onChange={(e) => updateCorruptedOfficial(index, 'officialName', e.target.value)}
+                        onChange={(e) => handleCorruptedOfficialAutoFill(index, 'officialName', e.target.value)}
                         style={{
                           width: '100%',
                           padding: '10px',
@@ -4232,12 +5119,12 @@ export default function App() {
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
-                        NIC Number
+                        NIC Number <small style={{ color: '#666' }}>(Auto-fills name)</small>
                       </label>
                       <input
                         type="text"
                         value={official.officialNic}
-                        onChange={(e) => updateCorruptedOfficial(index, 'officialNic', e.target.value)}
+                        onChange={(e) => handleCorruptedOfficialAutoFill(index, 'officialNic', e.target.value)}
                         style={{
                           width: '100%',
                           padding: '10px',
@@ -4250,12 +5137,12 @@ export default function App() {
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#34495e' }}>
-                        Passport Number
+                        Passport Number <small style={{ color: '#666' }}>(Auto-fills name)</small>
                       </label>
                       <input
                         type="text"
                         value={official.officialPassport}
-                        onChange={(e) => updateCorruptedOfficial(index, 'officialPassport', e.target.value)}
+                        onChange={(e) => handleCorruptedOfficialAutoFill(index, 'officialPassport', e.target.value)}
                         style={{
                           width: '100%',
                           padding: '10px',
@@ -4419,7 +5306,7 @@ export default function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h3 style={{ color: '#7e57c2', margin: 0 }}>Lawyers Details</h3>
-                <button onClick={addLawyer} style={{ padding: '10px 20px', backgroundColor: '#7e57c2', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Lawyer</button>
+                <button onClick={addLawyerWithCaseSelect} style={{ padding: '10px 20px', backgroundColor: '#7e57c2', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Lawyer</button>
               </div>
 
               {(formData.lawyers||[]).length === 0 && (
@@ -4437,16 +5324,29 @@ export default function App() {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                     <div>
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Case Number <small style={{ color: '#666' }}>(From Court Cases)</small></label>
+                      <select 
+                        value={lawyer.caseNumber || ''} 
+                        onChange={(e) => updateLawyerWithCaseNumber(index, 'caseNumber', e.target.value)} 
+                        style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+                      >
+                        <option value="">Select Case Number</option>
+                        {getAllCaseNumbers().map((caseNum, idx) => (
+                          <option key={idx} value={caseNum}>{caseNum}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Lawyer Full Name</label>
-                      <input type="text" value={lawyer.lawyerFullName} onChange={(e) => updateLawyer(index, 'lawyerFullName', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                      <input type="text" value={lawyer.lawyerFullName} onChange={(e) => updateLawyerWithCaseNumber(index, 'lawyerFullName', e.target.value)} style={{ width: '100%', padding: '8px' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Law Firm or Company</label>
-                      <input type="text" value={lawyer.lawFirmOrCompany} onChange={(e) => updateLawyer(index, 'lawFirmOrCompany', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                      <input type="text" value={lawyer.lawFirmOrCompany} onChange={(e) => updateLawyerWithCaseNumber(index, 'lawFirmOrCompany', e.target.value)} style={{ width: '100%', padding: '8px' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Phone Number</label>
-                      <input type="text" value={lawyer.phoneNumber} onChange={(e) => updateLawyer(index, 'phoneNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                      <input type="text" value={lawyer.phoneNumber} onChange={(e) => updateLawyerWithCaseNumber(index, 'phoneNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
                     </div>
                   </div>
                 </div>
@@ -4591,16 +5491,16 @@ export default function App() {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                     <div>
-                      <label style={{ display: 'block', fontWeight: 'bold' }}>Full Name</label>
-                      <input type="text" value={relativesOfficial.fullName} onChange={(e) => updateRelativesOfficial(index, 'fullName', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Full Name <small style={{ color: '#666' }}>(Auto-fills from NIC/Passport)</small></label>
+                      <input type="text" value={relativesOfficial.fullName} onChange={(e) => handleRelativesOfficialAutoFill(index, 'fullName', e.target.value)} style={{ width: '100%', padding: '8px' }} />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontWeight: 'bold' }}>NIC Number</label>
-                      <input type="text" value={relativesOfficial.nicNumber} onChange={(e) => updateRelativesOfficial(index, 'nicNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>NIC Number <small style={{ color: '#666' }}>(Auto-fills name)</small></label>
+                      <input type="text" value={relativesOfficial.nicNumber} onChange={(e) => handleRelativesOfficialAutoFill(index, 'nicNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontWeight: 'bold' }}>Passport Number</label>
-                      <input type="text" value={relativesOfficial.passportNumber} onChange={(e) => updateRelativesOfficial(index, 'passportNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                      <label style={{ display: 'block', fontWeight: 'bold' }}>Passport Number <small style={{ color: '#666' }}>(Auto-fills name)</small></label>
+                      <input type="text" value={relativesOfficial.passportNumber} onChange={(e) => handleRelativesOfficialAutoFill(index, 'passportNumber', e.target.value)} style={{ width: '100%', padding: '8px' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Department</label>
@@ -4782,7 +5682,7 @@ export default function App() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="Search by name or NIC"
+            placeholder="Search by Name or NIC or Passport Number"
             disabled={selectedPerson !== null && !isEditing}
             style={{
               flex: 1,
@@ -4830,6 +5730,11 @@ export default function App() {
               <div style={{ fontSize: '12px', color: '#95a5a6', marginTop: '5px' }}>
                 NIC: {person.nic}
               </div>
+              {person.passport && (
+                <div style={{ fontSize: '12px', color: '#95a5a6', marginTop: '2px' }}>
+                  Passport: {person.passport}
+                </div>
+              )}
             </div>
           ))}
         </div>

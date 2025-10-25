@@ -224,6 +224,13 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
     );
     console.log('Properties query result for person', id, ':', propertiesResult.rows.length, 'properties found');
 
+    // Get addresses
+    const addressesResult = await pool.query(
+      'SELECT * FROM addresses WHERE person_id = $1 ORDER BY created_at DESC',
+      [id]
+    );
+    console.log('Addresses query result for person', id, ':', addressesResult.rows.length, 'addresses found');
+
     // Get social media
     const socialMediaResult = await pool.query(
       'SELECT * FROM social_media WHERE person_id = $1 ORDER BY created_at DESC',
@@ -359,7 +366,10 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         documents: property.documents,
         buyer_name: property.buyer_name,
         buyer_nic: property.buyer_nic,
-        buyer_passport: property.buyer_passport
+        buyer_passport: property.buyer_passport,
+        owner_full_name: property.owner_full_name,
+        owner_nic: property.owner_nic,
+        owner_passport: property.owner_passport
       })),
       gangDetails: gangResult.rows.map(gang => ({
         id: gang.id,
@@ -415,7 +425,8 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         id: lawyer.id,
         lawyer_full_name: lawyer.lawyer_full_name,
         law_firm_or_company: lawyer.law_firm_or_company,
-        phone_number: lawyer.phone_number
+        phone_number: lawyer.phone_number,
+        case_number: lawyer.case_number
       })),
       courtCases: courtCasesResult.rows.map(courtCase => ({
         id: courtCase.id,
@@ -459,6 +470,20 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         loan_amount: bankDetail.loan_amount,
         loan_term: bankDetail.loan_term,
         monthly_payment: bankDetail.monthly_payment
+      })),
+      addresses: addressesResult.rows.map(address => ({
+        id: address.id,
+        number: address.number,
+        street1: address.street1,
+        street2: address.street2,
+        town: address.town,
+        district: address.district,
+        province: address.province,
+        policeArea: address.police_area,
+        policeDivision: address.police_division,
+        fromDate: address.from_date ? address.from_date.toISOString().split('T')[0] : null,
+        endDate: address.end_date ? address.end_date.toISOString().split('T')[0] : null,
+        isCurrentlyActive: address.is_currently_active
       }))
     };
     
@@ -591,7 +616,7 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
         await client.query(
           `INSERT INTO call_history (person_id, device, call_type, number, date_time)
            VALUES ($1, $2, $3, $4, $5)`,
-          [personId, call.device, call.callType, call.number, call.dateTime]
+          [personId, call.device, call.callType, call.number, call.dateTime || null]
         );
       }
     }
@@ -620,8 +645,8 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
     if (properties && properties.length > 0) {
       for (const property of properties) {
         await client.query(
-          `INSERT INTO properties (person_id, property_type, status, description, value, purchase_date, sale_date, location, documents, buyer_name, buyer_nic, buyer_passport)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          `INSERT INTO properties (person_id, property_type, status, description, value, purchase_date, sale_date, location, documents, buyer_name, buyer_nic, buyer_passport, owner_full_name, owner_nic, owner_passport)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
           [
             personId, 
             property.propertyType, 
@@ -634,7 +659,10 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
             property.documents || null, 
             property.buyerName || null, 
             property.buyerNIC || null, 
-            property.buyerPassport || null
+            property.buyerPassport || null,
+            property.ownerFullName || null,
+            property.ownerNic || null,
+            property.ownerPassport || null
           ]
         );
       }
@@ -675,9 +703,9 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
           continue;
         }
         await client.query(
-          `INSERT INTO lawyers (person_id, lawyer_full_name, law_firm_or_company, phone_number)
-           VALUES ($1, $2, $3, $4)`,
-          [personId, lawyer.lawyerFullName.trim(), lawyer.lawFirmOrCompany || null, lawyer.phoneNumber || null]
+          `INSERT INTO lawyers (person_id, lawyer_full_name, law_firm_or_company, phone_number, case_number)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [personId, lawyer.lawyerFullName.trim(), lawyer.lawFirmOrCompany || null, lawyer.phoneNumber || null, lawyer.caseNumber || null]
         );
       }
     }
@@ -810,6 +838,40 @@ app.post('/api/person', checkDbConnection, async (req, res) => {
         );
       }
     }
+
+    // Handle addresses (new separate addresses table)
+    if (req.body.addresses && Array.isArray(req.body.addresses)) {
+      console.log('Processing addresses for new person:', req.body.addresses.length, 'addresses');
+      
+      // Insert new addresses
+      for (const address of req.body.addresses) {
+        // Skip empty addresses
+        if (!address.number && !address.street1 && !address.town) {
+          console.log('Skipping empty address');
+          continue;
+        }
+
+        await client.query(
+          `INSERT INTO addresses (person_id, number, street1, street2, town, district, province, 
+                                 police_area, police_division, from_date, end_date, is_currently_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            personId,
+            address.number || null,
+            address.street1 || null,
+            address.street2 || null,
+            address.town || null,
+            address.district || null,
+            address.province || null,
+            address.policeArea || null,
+            address.policeDivision || null,
+            address.fromDate || null,
+            address.endDate || null,
+            address.isCurrentlyActive || false
+          ]
+        );
+      }
+    }
     
     await client.query('COMMIT');
     res.json({ id: personId, message: 'Person created successfully' });
@@ -841,46 +903,50 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     
     await client.query('BEGIN');
     
-    // Format address - handle both string and object formats
+    // Format address - handle both string and object formats (only if personal data provided)
     let addressString = '';
-    if (typeof personal.address === 'object' && personal.address !== null) {
-      const addr = personal.address;
-      addressString = [
-        addr.number || '',
-        addr.street1 || '',
-        addr.street2 || '',
-        addr.town || '',
-        addr.district || '',
-        addr.province || '',
-        addr.policeArea || '',
-        addr.policeDivision || ''
-      ].join('|');
-    } else {
-      addressString = personal.address || '';
+    if (personal && personal.address) {
+      if (typeof personal.address === 'object' && personal.address !== null) {
+        const addr = personal.address;
+        addressString = [
+          addr.number || '',
+          addr.street1 || '',
+          addr.street2 || '',
+          addr.town || '',
+          addr.district || '',
+          addr.province || '',
+          addr.policeArea || '',
+          addr.policeDivision || ''
+        ].join('|');
+      } else {
+        addressString = personal.address || '';
+      }
     }
 
-    // Update person
-    await client.query(
-      `UPDATE people 
-       SET first_name = $1, last_name = $2, full_name = $3, aliases = $4, passport = $5, 
-           nic = $6, height = $7, religion = $8, gender = $9, date_of_birth = $10, 
-           address = $11, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $12`,
-      [
-        personal.firstName, 
-        personal.lastName, 
-        personal.fullName || `${personal.firstName} ${personal.lastName}`,
-        personal.aliases,
-        personal.passport,
-        personal.nic, 
-        personal.height ? parseFloat(personal.height) : null,
-        personal.religion,
-        personal.gender,
-        personal.dateOfBirth || null,
-        addressString, 
-        id
-      ]
-    );
+    // Update person only if personal data is provided and has required fields
+    if (personal && personal.firstName && personal.lastName && personal.nic) {
+      await client.query(
+        `UPDATE people 
+         SET first_name = $1, last_name = $2, full_name = $3, aliases = $4, passport = $5, 
+             nic = $6, height = $7, religion = $8, gender = $9, date_of_birth = $10, 
+             address = $11, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $12`,
+        [
+          personal.firstName, 
+          personal.lastName, 
+          personal.fullName || `${personal.firstName} ${personal.lastName}`,
+          personal.aliases,
+          personal.passport,
+          personal.nic, 
+          personal.height ? parseFloat(personal.height) : null,
+          personal.religion,
+          personal.gender,
+          personal.dateOfBirth || null,
+          addressString, 
+          id
+        ]
+      );
+    }
     
     // Update or insert bank details
     if (bank && bank.accountNumber) {
@@ -991,7 +1057,7 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
         await client.query(
           `INSERT INTO call_history (person_id, device, call_type, number, date_time)
            VALUES ($1, $2, $3, $4, $5)`,
-          [id, call.device, call.callType, call.number, call.dateTime]
+          [id, call.device, call.callType, call.number, call.dateTime || null]
         );
       }
     }
@@ -1022,8 +1088,8 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
       for (const property of properties) {
         console.log('Inserting property:', property);
         await client.query(
-          `INSERT INTO properties (person_id, property_type, status, description, value, purchase_date, sale_date, location, documents, buyer_name, buyer_nic, buyer_passport)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          `INSERT INTO properties (person_id, property_type, status, description, value, purchase_date, sale_date, location, documents, buyer_name, buyer_nic, buyer_passport, owner_full_name, owner_nic, owner_passport)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
           [
             id, 
             property.propertyType, 
@@ -1036,7 +1102,10 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
             property.documents || null, 
             property.buyerName || null, 
             property.buyerNIC || null, 
-            property.buyerPassport || null
+            property.buyerPassport || null,
+            property.ownerFullName || null,
+            property.ownerNic || null,
+            property.ownerPassport || null
           ]
         );
       }
@@ -1083,9 +1152,9 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
           continue;
         }
         await client.query(
-          `INSERT INTO lawyers (person_id, lawyer_full_name, law_firm_or_company, phone_number)
-           VALUES ($1, $2, $3, $4)`,
-          [id, lawyer.lawyerFullName.trim(), lawyer.lawFirmOrCompany || null, lawyer.phoneNumber || null]
+          `INSERT INTO lawyers (person_id, lawyer_full_name, law_firm_or_company, phone_number, case_number)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [id, lawyer.lawyerFullName.trim(), lawyer.lawFirmOrCompany || null, lawyer.phoneNumber || null, lawyer.caseNumber || null]
         );
       }
     }
@@ -1249,6 +1318,21 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
           if (existingPerson.rows.length > 0) {
             officialPersonId = existingPerson.rows[0].id;
             console.log(`Found existing person with NIC ${official.officialNic}: ID ${officialPersonId}`);
+            
+            // Update the existing person's details in case they changed
+            await client.query(
+              `UPDATE people 
+               SET first_name = $1, last_name = $2, full_name = $3, passport = $4, updated_at = CURRENT_TIMESTAMP
+               WHERE id = $5`,
+              [
+                official.officialName.split(' ')[0] || '',
+                official.officialName.split(' ').slice(1).join(' ') || '',
+                official.officialName,
+                official.officialPassport || null,
+                officialPersonId
+              ]
+            );
+            console.log(`Updated existing person details for: ${official.officialName}`);
           } else {
             // Create new person for the official
             const newPersonResult = await client.query(
@@ -1274,6 +1358,21 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
           if (existingPerson.rows.length > 0) {
             officialPersonId = existingPerson.rows[0].id;
             console.log(`Found existing person with passport ${official.officialPassport}: ID ${officialPersonId}`);
+            
+            // Update the existing person's details in case they changed
+            await client.query(
+              `UPDATE people 
+               SET first_name = $1, last_name = $2, full_name = $3, nic = $4, updated_at = CURRENT_TIMESTAMP
+               WHERE id = $5`,
+              [
+                official.officialName.split(' ')[0] || '',
+                official.officialName.split(' ').slice(1).join(' ') || '',
+                official.officialName,
+                official.officialNic || null,
+                officialPersonId
+              ]
+            );
+            console.log(`Updated existing person details for: ${official.officialName}`);
           } else {
             // Create new person for the official
             const newPersonResult = await client.query(
@@ -1408,6 +1507,43 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
             enemyGang.gangName.trim(), 
             enemyGang.threatLevel || 'Low',
             enemyGang.notes || null
+          ]
+        );
+      }
+    }
+
+    // Handle addresses (new separate addresses table)
+    if (req.body.addresses && Array.isArray(req.body.addresses)) {
+      console.log('Processing addresses for person', id, ':', req.body.addresses.length, 'addresses');
+      
+      // First, delete existing addresses for this person
+      await client.query('DELETE FROM addresses WHERE person_id = $1', [id]);
+      
+      // Insert new addresses
+      for (const address of req.body.addresses) {
+        // Skip empty addresses
+        if (!address.number && !address.street1 && !address.town) {
+          console.log('Skipping empty address');
+          continue;
+        }
+
+        await client.query(
+          `INSERT INTO addresses (person_id, number, street1, street2, town, district, province, 
+                                 police_area, police_division, from_date, end_date, is_currently_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            id,
+            address.number || null,
+            address.street1 || null,
+            address.street2 || null,
+            address.town || null,
+            address.district || null,
+            address.province || null,
+            address.policeArea || null,
+            address.policeDivision || null,
+            address.fromDate || null,
+            address.endDate || null,
+            address.isCurrentlyActive || false
           ]
         );
       }
@@ -1729,6 +1865,103 @@ app.get('/api/status', (req, res) => {
     database: pool.isConnected() ? 'connected' : 'disconnected',
     timestamp: new Date().toISOString()
   });
+});
+
+// Search person by phone number for call history auto-fill
+app.get('/api/search-by-phone/:phoneNumber', async (req, res) => {
+  try {
+    const { phoneNumber } = req.params;
+    
+    // Search in different phone number fields across multiple tables
+    const searchQuery = `
+      SELECT DISTINCT p.id, p.first_name, p.last_name, p.full_name, p.nic, p.passport,
+             'second_phone' as source, 'whatsapp' as field_type
+      FROM people p
+      JOIN second_phone sp ON p.id = sp.person_id
+      WHERE sp.whatsapp = $1
+      
+      UNION
+      
+      SELECT DISTINCT p.id, p.first_name, p.last_name, p.full_name, p.nic, p.passport,
+             'second_phone' as source, 'telegram' as field_type
+      FROM people p
+      JOIN second_phone sp ON p.id = sp.person_id
+      WHERE sp.telegram = $1
+      
+      UNION
+      
+      SELECT DISTINCT p.id, p.first_name, p.last_name, p.full_name, p.nic, p.passport,
+             'second_phone' as source, 'viber' as field_type
+      FROM people p
+      JOIN second_phone sp ON p.id = sp.person_id
+      WHERE sp.viber = $1
+      
+      UNION
+      
+      SELECT DISTINCT p.id, p.first_name, p.last_name, p.full_name, p.nic, p.passport,
+             'second_phone' as source, 'mobile' as field_type
+      FROM people p
+      JOIN second_phone sp ON p.id = sp.person_id
+      WHERE sp.mobile = $1
+      
+      UNION
+      
+      SELECT DISTINCT p.id, p.first_name, p.last_name, p.full_name, p.nic, p.passport,
+             'second_phone' as source, 'landline' as field_type
+      FROM people p
+      JOIN second_phone sp ON p.id = sp.person_id
+      WHERE sp.landline = $1
+      
+      UNION
+      
+      SELECT DISTINCT p.id, p.first_name, p.last_name, p.full_name, p.nic, p.passport,
+             'second_phone' as source, 'other' as field_type
+      FROM people p
+      JOIN second_phone sp ON p.id = sp.person_id
+      WHERE sp.other = $1
+      
+      UNION
+      
+      SELECT DISTINCT p.id, p.first_name, p.last_name, p.full_name, p.nic, p.passport,
+             'family_members' as source, 'phone_number' as field_type
+      FROM people p
+      JOIN family_members fm ON p.id = fm.person_id
+      WHERE fm.phone_number = $1
+      
+      UNION
+      
+      SELECT DISTINCT p.id, p.first_name, p.last_name, p.full_name, p.nic, p.passport,
+             'call_history' as source, 'number' as field_type
+      FROM people p
+      JOIN call_history ch ON p.id = ch.person_id
+      WHERE ch.number = $1
+      
+      LIMIT 10
+    `;
+    
+    const result = await pool.query(searchQuery, [phoneNumber]);
+    
+    if (result.rows.length > 0) {
+      // Return the first match (most relevant)
+      const person = result.rows[0];
+      res.json({
+        found: true,
+        person: {
+          id: person.id,
+          fullName: person.full_name || `${person.first_name} ${person.last_name}`,
+          nic: person.nic,
+          passport: person.passport,
+          source: person.source,
+          fieldType: person.field_type
+        }
+      });
+    } else {
+      res.json({ found: false });
+    }
+  } catch (error) {
+    console.error('Phone search error:', error);
+    res.status(500).json({ error: 'Failed to search by phone number' });
+  }
 });
 
 // Start server with explicit IPv4 binding
