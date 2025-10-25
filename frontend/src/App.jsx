@@ -15,6 +15,7 @@ export default function App() {
   const [searchResults, setSearchResults] = useState([]);
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [formData, setFormData] = useState({
     personal: { 
       firstName: '', 
@@ -368,6 +369,23 @@ export default function App() {
     return value.replace(/[^\d+]/g, '');
   };
 
+  // Convert database datetime to datetime-local input format
+  const formatDateTimeForInput = (dbDateTime) => {
+    if (!dbDateTime) return '';
+    
+    try {
+      const date = new Date(dbDateTime);
+      // Check if the date is valid
+      if (isNaN(date.getTime())) return '';
+      
+      // Format as YYYY-MM-DDTHH:mm (required for datetime-local input)
+      return date.toISOString().slice(0, 16);
+    } catch (error) {
+      console.error('Error formatting datetime:', error);
+      return '';
+    }
+  };
+
   // Navigation through sections (next/previous)
   // Organize sections into pages - Phone is last section on page 1
   // All sections in scrollable order - no pagination needed
@@ -660,7 +678,9 @@ export default function App() {
           device: c.device || '',
           callType: c.call_type || '',
           number: c.number || '',
-          dateTime: c.date_time || ''
+          dateTime: formatDateTimeForInput(c.date_time),
+          contactName: '', // Will be populated by populateAllCallHistoryContacts
+          contactNic: ''   // Will be populated by populateAllCallHistoryContacts
         })) : [],
         weapons: data.weapons ? data.weapons.map(w => ({
           manufacturer: w.manufacturer || '',
@@ -803,6 +823,27 @@ export default function App() {
           monthlyPayment: bd.monthly_payment ? String(bd.monthly_payment) : ''
         })) : []
       });
+      
+      // After setting form data, populate contact information for call history
+      if (data.callHistory && data.callHistory.length > 0) {
+        const callHistoryWithContacts = await populateAllCallHistoryContacts(
+          data.callHistory.map(c => ({
+            device: c.device || '',
+            callType: c.call_type || '',
+            number: c.number || '',
+            dateTime: formatDateTimeForInput(c.date_time),
+            contactName: '',
+            contactNic: ''
+          }))
+        );
+        
+        // Update form data with populated contact information
+        setFormData(prev => ({
+          ...prev,
+          callHistory: callHistoryWithContacts
+        }));
+      }
+      
       setIsEditing(false);
     } catch (error) {
       console.error('Load person error:', error);
@@ -907,35 +948,8 @@ export default function App() {
       const response = await axios.put(`${API_URL}/person/${selectedPerson}`, updateData);
       console.log('Update response:', response.data);
       
-      // Clear any cached data and force a fresh reload
-      setFormData({
-        personal: { firstName: '', lastName: '', fullName: '', aliases: '', passport: '', nic: '', height: '', religion: '', gender: '', dateOfBirth: '', address: '' },
-        addresses: [],
-        bank: { accountNumber: '', bankName: '', branch: '', balance: '' },
-        family: [],
-        vehicles: [],
-        bodyMarks: [],
-        usedDevices: [],
-        callHistory: [],
-        weapons: [],
-        phones: [],
-        properties: { currentlyInPossession: [], sold: [], intendedToBuy: [] },
-        gangDetails: [],
-        enemies: {
-          individuals: [],
-          gangs: []
-        },
-        corruptedOfficials: [],
-        socialMedia: [],
-        occupations: [],
-        lawyers: [],
-        courtCases: [],
-        activeAreas: [],
-        relativesOfficials: [],
-        bankDetails: []
-      });
-      
-      // Force reload fresh data from database
+      // Instead of clearing form data completely, just reload from database
+      // This preserves any runtime-calculated fields like contact information
       await loadPerson(selectedPerson);
       
       alert('Updated successfully! Data has been saved to the database.');
@@ -1173,23 +1187,67 @@ export default function App() {
     const now = new Date();
     const defaultDateTime = now.toISOString().slice(0, 16); // Format: YYYY-MM-DDTHH:mm
     
-    setFormData(prev => ({
-      ...prev,
-      callHistory: [...prev.callHistory, { 
+    setFormData(prev => {
+      const newCallHistory = [...prev.callHistory, { 
         device: '', 
         callType: '', 
         number: '', 
         dateTime: defaultDateTime,
         contactName: '',
         contactNic: ''
-      }]
-    }));
+      }];
+      
+      // Auto-save to database after adding (but only save non-empty entries)
+      if (selectedPerson) {
+        setTimeout(() => {
+          const callHistoryToSave = newCallHistory.filter(call => 
+            call.device && call.callType && call.number
+          );
+          autoSaveCallHistory(callHistoryToSave);
+        }, 500);
+      }
+      
+      return {
+        ...prev,
+        callHistory: newCallHistory
+      };
+    });
+  };
+
+  // Auto-save call history to database
+  const autoSaveCallHistory = async (callHistoryData) => {
+    if (!selectedPerson) return;
+    
+    try {
+      setIsAutoSaving(true);
+      
+      // Only save valid entries with required fields
+      const callHistoryForDB = callHistoryData
+        .filter(call => call.device && call.callType && call.number)
+        .map(call => ({
+          device: call.device,
+          callType: call.callType,
+          number: call.number,
+          dateTime: call.dateTime ? new Date(call.dateTime).toISOString() : null
+        }));
+
+      await axios.put(`${API_URL}/person/${selectedPerson}/call-history`, {
+        callHistory: callHistoryForDB
+      });
+      
+      console.log('Call history auto-saved successfully');
+      
+      // Show success feedback briefly
+      setTimeout(() => setIsAutoSaving(false), 1000);
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+      setIsAutoSaving(false);
+    }
   };
 
   const updateCallHistory = (index, field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      callHistory: prev.callHistory.map((call, i) => 
+    setFormData(prev => {
+      const newCallHistory = prev.callHistory.map((call, i) => 
         i === index ? { 
           ...call, 
           [field]: value,
@@ -1197,15 +1255,35 @@ export default function App() {
           contactName: call.contactName || '',
           contactNic: call.contactNic || ''
         } : call
-      )
-    }));
+      );
+      
+      // Auto-save to database after updating (with a small delay to avoid too many requests)
+      clearTimeout(window.callHistoryAutoSaveTimeout);
+      window.callHistoryAutoSaveTimeout = setTimeout(() => {
+        autoSaveCallHistory(newCallHistory);
+      }, 1000); // Save after 1 second of no changes
+      
+      return {
+        ...prev,
+        callHistory: newCallHistory
+      };
+    });
   };
 
   const removeCallHistory = (index) => {
-    setFormData(prev => ({
-      ...prev,
-      callHistory: prev.callHistory.filter((_, i) => i !== index)
-    }));
+    setFormData(prev => {
+      const newCallHistory = prev.callHistory.filter((_, i) => i !== index);
+      
+      // Auto-save to database after removing
+      if (selectedPerson) {
+        setTimeout(() => autoSaveCallHistory(newCallHistory), 500);
+      }
+      
+      return {
+        ...prev,
+        callHistory: newCallHistory
+      };
+    });
   };
 
   // Used Weapons functions
@@ -1621,6 +1699,36 @@ export default function App() {
         if (personData.passport) updateProperty(section, index, 'ownerPassport', personData.passport);
       }
     }
+  };
+
+  // Populate contact information for all call history entries
+  const populateAllCallHistoryContacts = async (callHistoryArray) => {
+    const updatedCallHistory = [];
+    
+    for (const call of callHistoryArray) {
+      if (call.number && call.number.length >= 8) {
+        try {
+          const response = await fetch(`http://localhost:5000/api/search-by-phone/${call.number}`);
+          if (response.ok) {
+            const data = await response.json();
+            updatedCallHistory.push({
+              ...call,
+              contactName: data.found ? data.person.fullName : '',
+              contactNic: data.found ? data.person.nic : ''
+            });
+          } else {
+            updatedCallHistory.push({...call, contactName: '', contactNic: ''});
+          }
+        } catch (error) {
+          console.error('Error fetching contact for', call.number, error);
+          updatedCallHistory.push({...call, contactName: '', contactNic: ''});
+        }
+      } else {
+        updatedCallHistory.push({...call, contactName: '', contactNic: ''});
+      }
+    }
+    
+    return updatedCallHistory;
   };
 
   // Auto-fill for Call History phone numbers
@@ -3142,22 +3250,46 @@ export default function App() {
 
           {activeSection === 'callHistory' && (
             <div>
-              <button
-                onClick={addCallHistory}
-                style={{
-                  padding: '12px 24px',
-                  marginBottom: '20px',
-                  backgroundColor: '#3498db',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                + Add Call Record
-              </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <button
+                  onClick={addCallHistory}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  + Add Call Record
+                </button>
+                
+                {isAutoSaving && (
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    color: '#27ae60',
+                    fontSize: '14px',
+                    fontWeight: 'bold'
+                  }}>
+                    <span style={{ marginRight: '8px' }}>💾</span>
+                    Auto-saving...
+                  </div>
+                )}
+                
+                {selectedPerson && (
+                  <div style={{ 
+                    fontSize: '12px', 
+                    color: '#666',
+                    fontStyle: 'italic'
+                  }}>
+                    Changes are automatically saved
+                  </div>
+                )}
+              </div>
 
               {formData.callHistory.map((call, index) => (
                 <div key={index} style={{
@@ -3194,21 +3326,7 @@ export default function App() {
                       </label>
                       <select
                         value={call.device}
-                        onChange={(e) => {
-                          // Update device while preserving contact information
-                          setFormData(prev => ({
-                            ...prev,
-                            callHistory: prev.callHistory.map((c, i) => 
-                              i === index ? { 
-                                ...c, 
-                                device: e.target.value,
-                                // Preserve existing contact info
-                                contactName: c.contactName || '',
-                                contactNic: c.contactNic || ''
-                              } : c
-                            )
-                          }));
-                        }}
+                        onChange={(e) => updateCallHistory(index, 'device', e.target.value)}
                         style={{
                           width: '100%',
                           padding: '10px',
@@ -3237,21 +3355,7 @@ export default function App() {
                       </label>
                       <select
                         value={call.callType}
-                        onChange={(e) => {
-                          // Update call type while preserving contact information
-                          setFormData(prev => ({
-                            ...prev,
-                            callHistory: prev.callHistory.map((c, i) => 
-                              i === index ? { 
-                                ...c, 
-                                callType: e.target.value,
-                                // Preserve existing contact info
-                                contactName: c.contactName || '',
-                                contactNic: c.contactNic || ''
-                              } : c
-                            )
-                          }));
-                        }}
+                        onChange={(e) => updateCallHistory(index, 'callType', e.target.value)}
                         style={{
                           width: '100%',
                           padding: '10px',
@@ -3345,21 +3449,7 @@ export default function App() {
                       <input
                         type="datetime-local"
                         value={call.dateTime || ''}
-                        onChange={(e) => {
-                          // Update dateTime while preserving contact information
-                          setFormData(prev => ({
-                            ...prev,
-                            callHistory: prev.callHistory.map((c, i) => 
-                              i === index ? { 
-                                ...c, 
-                                dateTime: e.target.value,
-                                // Preserve existing contact info
-                                contactName: c.contactName || '',
-                                contactNic: c.contactNic || ''
-                              } : c
-                            )
-                          }));
-                        }}
+                        onChange={(e) => updateCallHistory(index, 'dateTime', e.target.value)}
                         style={{
                           width: '100%',
                           padding: '10px',

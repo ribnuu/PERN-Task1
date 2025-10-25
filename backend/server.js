@@ -1867,6 +1867,45 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// Update call history for a specific person
+app.put('/api/person/:id/call-history', checkDbConnection, async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    const { id } = req.params;
+    const { callHistory } = req.body;
+    
+    await client.query('BEGIN');
+    
+    // Delete existing call history for this person
+    await client.query('DELETE FROM call_history WHERE person_id = $1', [id]);
+    
+    // Insert new call history
+    if (callHistory && callHistory.length > 0) {
+      for (const call of callHistory) {
+        // Skip empty or invalid entries
+        if (!call.device || !call.callType || !call.number) continue;
+        
+        await client.query(
+          `INSERT INTO call_history (person_id, device, call_type, number, date_time)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [id, call.device, call.callType, call.number, call.dateTime || null]
+        );
+      }
+    }
+    
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Call history updated successfully' });
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Call history update error:', error);
+    res.status(500).json({ error: 'Failed to update call history' });
+  } finally {
+    client.release();
+  }
+});
+
 // Search person by phone number for call history auto-fill
 app.get('/api/search-by-phone/:phoneNumber', async (req, res) => {
   try {
