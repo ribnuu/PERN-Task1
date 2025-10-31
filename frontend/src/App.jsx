@@ -4,6 +4,10 @@ import axios from 'axios';
 const API_URL = 'http://localhost:5000/api';
 
 export default function App() {
+  // Application Mode State
+  const [currentPage, setCurrentPage] = useState('home'); // 'home', 'enter-data', 'search-data', 'analysis', 'api-connection'
+  const [appMode, setAppMode] = useState('view'); // 'enter', 'search', 'analysis', 'view'
+  
   const [activeSection, setActiveSection] = useState('personal');
   const [activePropertiesTab, setActivePropertiesTab] = useState('currentlyInPossession');
   const [activePersonalTab, setActivePersonalTab] = useState('basicInfo');
@@ -16,6 +20,8 @@ export default function App() {
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [deletedSections, setDeletedSections] = useState(new Set());
   const [formData, setFormData] = useState({
     personal: { 
       firstName: '', 
@@ -413,6 +419,27 @@ export default function App() {
     }
   };
 
+  // Navigation handlers for different pages
+  const navigateToPage = (page, mode = 'view') => {
+    setCurrentPage(page);
+    setAppMode(mode);
+    
+    // Reset states based on mode
+    if (mode === 'enter') {
+      setSelectedPerson(null);
+      setIsEditing(false);
+      setHasChanges(false);
+    } else if (mode === 'search') {
+      setIsEditing(false);
+      setHasChanges(false);
+    }
+  };
+
+  const goToHomePage = () => {
+    setCurrentPage('home');
+    setAppMode('view');
+  };
+
   // Social media handlers
   const addSocialMedia = () => {
     setFormData(prev => ({ ...prev, socialMedia: [...(prev.socialMedia||[]), { platform: '', url: '', username: '', password: '' }] }));
@@ -422,6 +449,7 @@ export default function App() {
       ...prev,
       socialMedia: prev.socialMedia.map((s, i) => i === index ? { ...s, [field]: value } : s)
     }));
+    trackChanges('socialMedia');
   };
   const removeSocialMedia = (index) => {
     setFormData(prev => ({ ...prev, socialMedia: prev.socialMedia.filter((_, i) => i !== index) }));
@@ -436,6 +464,7 @@ export default function App() {
       ...prev,
       occupations: prev.occupations.map((o, i) => i === index ? { ...o, [field]: value } : o)
     }));
+    trackChanges('occupations');
   };
   const removeOccupation = (index) => {
     setFormData(prev => ({ ...prev, occupations: prev.occupations.filter((_, i) => i !== index) }));
@@ -539,6 +568,7 @@ export default function App() {
         console.log('No matching person found or search error:', error.message);
       }
     }
+    trackChanges();
   };
   const removeRelativesOfficial = (index) => {
     setFormData(prev => ({ ...prev, relativesOfficials: prev.relativesOfficials.filter((_, i) => i !== index) }));
@@ -553,6 +583,7 @@ export default function App() {
       ...prev,
       bankDetails: prev.bankDetails.map((bankDetail, i) => i === index ? { ...bankDetail, [field]: value } : bankDetail)
     }));
+    trackChanges();
   };
   const removeBankDetail = (index) => {
     setFormData(prev => ({ ...prev, bankDetails: prev.bankDetails.filter((_, i) => i !== index) }));
@@ -613,6 +644,26 @@ export default function App() {
       console.log('Properties from API:', data.properties);
       
       setSelectedPerson(id);
+      
+      // Get deleted sections data FIRST and use it consistently
+      const deletedSectionsResponse = await axios.get(`${API_URL}/person/${id}/deleted-sections`);
+      const currentDeletedSections = new Set(deletedSectionsResponse.data.map(item => item.sectionName));
+      
+      // Store deleted data for each section
+      console.log('📝 Deleted sections response in loadPerson:', deletedSectionsResponse.data);
+      const currentDeletedData = {};
+      deletedSectionsResponse.data.forEach(item => {
+        console.log(`📝 Processing deleted section: ${item.sectionName}`, item.deletedData);
+        if (item.deletedData) {
+          currentDeletedData[item.sectionName] = item.deletedData;
+        }
+      });
+      console.log('📝 Current deleted data for form population:', currentDeletedData);
+      
+      // Update state with the deleted sections data
+      setDeletedSections(currentDeletedSections);
+      setDeletedSectionsData(currentDeletedData);
+      
       setFormData({
         personal: {
           firstName: data.personal.first_name || '',
@@ -627,35 +678,70 @@ export default function App() {
           dateOfBirth: data.personal.date_of_birth ? data.personal.date_of_birth.split('T')[0] : '',
           address: ''
         },
-        addresses: data.addresses ? data.addresses.map(address => ({
-          id: address.id,
-          number: address.number || '',
-          street1: address.street1 || '',
-          street2: address.street2 || '',
-          town: address.town || '',
-          district: address.district || '',
-          province: address.province || '',
-          policeArea: address.policeArea || '',
-          policeDivision: address.policeDivision || '',
-          fromDate: address.fromDate || '',
-          endDate: address.endDate || '',
-          isCurrentlyActive: address.isCurrentlyActive || false
-        })) : [],
+        addresses: (() => {
+          // Check if address section is deleted and has deleted data
+          if (currentDeletedSections.has('address') && currentDeletedData.address?.addresses) {
+            return currentDeletedData.address.addresses.map(address => ({
+              id: address.id,
+              number: address.number || '',
+              street1: address.street1 || '',
+              street2: address.street2 || '',
+              town: address.town || '',
+              district: address.district || '',
+              province: address.province || '',
+              policeArea: address.police_area || '',
+              policeDivision: address.police_division || '',
+              fromDate: address.from_date ? address.from_date.split('T')[0] : '',
+              endDate: address.end_date ? address.end_date.split('T')[0] : '',
+              isCurrentlyActive: address.is_currently_active || false
+            }));
+          }
+          // Otherwise use live data
+          return data.addresses ? data.addresses.map(address => ({
+            id: address.id,
+            number: address.number || '',
+            street1: address.street1 || '',
+            street2: address.street2 || '',
+            town: address.town || '',
+            district: address.district || '',
+            province: address.province || '',
+            policeArea: address.policeArea || '',
+            policeDivision: address.policeDivision || '',
+            fromDate: address.fromDate || '',
+            endDate: address.endDate || '',
+            isCurrentlyActive: address.isCurrentlyActive || false
+          })) : [];
+        })(),
         bank: data.bank ? {
           accountNumber: data.bank.account_number || '',
           bankName: data.bank.bank_name || '',
           branch: data.bank.branch || '',
           balance: data.bank.balance ? String(data.bank.balance) : ''
         } : { accountNumber: '', bankName: '', branch: '', balance: '' },
-        family: data.family ? data.family.map(f => ({
-          relation: f.relation || '',
-          customRelation: f.custom_relation || '',
-          firstName: f.first_name || '',
-          lastName: f.last_name || '',
-          age: f.age ? String(f.age) : '',
-          nic: f.nic || '',
-          phoneNumber: f.phone_number || ''
-        })) : [],
+        family: (() => {
+          // Check if family section is deleted and has deleted data
+          if (currentDeletedSections.has('family') && currentDeletedData.family?.family) {
+            return currentDeletedData.family.family.map(f => ({
+              relation: f.relation || '',
+              customRelation: f.custom_relation || '',
+              firstName: f.first_name || '',
+              lastName: f.last_name || '',
+              age: f.age ? String(f.age) : '',
+              nic: f.nic || '',
+              phoneNumber: f.phone_number || ''
+            }));
+          }
+          // Otherwise use live data
+          return data.family ? data.family.map(f => ({
+            relation: f.relation || '',
+            customRelation: f.custom_relation || '',
+            firstName: f.first_name || '',
+            lastName: f.last_name || '',
+            age: f.age ? String(f.age) : '',
+            nic: f.nic || '',
+            phoneNumber: f.phone_number || ''
+          })) : [];
+        })(),
         vehicles: data.vehicles ? data.vehicles.map(v => ({
           vehicleNumber: v.vehicle_number || '',
           make: v.make || '',
@@ -845,6 +931,9 @@ export default function App() {
       }
       
       setIsEditing(false);
+      setHasChanges(false);
+      setDeletedSections(new Set());
+      setSectionChanges({});
     } catch (error) {
       console.error('Load person error:', error);
       const message = error.response?.data?.message || error.response?.data?.error || 'Failed to load person details';
@@ -886,6 +975,9 @@ export default function App() {
     });
     setIsEditing(true);
     setSearchResults([]);
+    setHasChanges(false);
+    setDeletedSections(new Set());
+    setSectionChanges({});
   };
 
   const handleUpdate = async () => {
@@ -943,6 +1035,26 @@ export default function App() {
       };
       delete updateData.phones; // Remove the phones field since backend expects secondPhone
       
+      // Remove data for deleted sections to prevent re-insertion (BUT only if no changes were made)
+      deletedSections.forEach(sectionName => {
+        // If there are changes to this section, don't remove the data - user is re-adding to previously deleted section
+        if (hasSectionChanges(sectionName)) {
+          console.log(`Section ${sectionName} has changes, keeping data for update even though it was previously deleted`);
+          return;
+        }
+        
+        if (updateData[sectionName]) {
+          delete updateData[sectionName];
+        }
+        // Handle special section mappings
+        if (sectionName === 'address' && updateData.addresses) {
+          delete updateData.addresses;
+        }
+        if (sectionName === 'phone' && updateData.secondPhone) {
+          delete updateData.secondPhone;
+        }
+      });
+      
       console.log('Updating person with data:', updateData);
 
       const response = await axios.put(`${API_URL}/person/${selectedPerson}`, updateData);
@@ -950,10 +1062,17 @@ export default function App() {
       
       // Instead of clearing form data completely, just reload from database
       // This preserves any runtime-calculated fields like contact information
+      console.log('🔄 Reloading person after update...');
+      console.log('🔄 Current deleted sections before reload:', Array.from(deletedSections));
+      console.log('🔄 Current deleted data before reload:', deletedSectionsData);
       await loadPerson(selectedPerson);
+      console.log('🔄 Deleted sections after reload:', Array.from(deletedSections));
+      console.log('🔄 Deleted data after reload:', deletedSectionsData);
       
       alert('Updated successfully! Data has been saved to the database.');
       setIsEditing(false);
+      setHasChanges(false);
+      clearSectionChanges();
       
     } catch (error) {
       console.error('Update error:', error);
@@ -1013,14 +1132,80 @@ export default function App() {
     }
   };
 
-  const handleDelete = async () => {
+  const handleGlobalDelete = async () => {
     if (!selectedPerson) return;
-    if (!confirm('Are you sure you want to delete this person?')) return;
+    
+    // Get currently active section
+    const currentSection = activeSection;
+    
+    if (!confirm(`Are you sure you want to delete the "${currentSection}" section? All data in this section will be permanently deleted from the database.`)) return;
+
+    try {
+      // Send delete request to backend for the specific section
+      const response = await axios.delete(`${API_URL}/person/${selectedPerson}/section/${currentSection}`);
+      
+      if (response.data.success) {
+        // Mark section as deleted locally
+        setDeletedSections(prev => new Set([...prev, currentSection]));
+        
+        // Clear the section data from formData to show deleted state
+        setFormData(prev => ({
+          ...prev,
+          [currentSection]: getEmptyDataForSection(currentSection)
+        }));
+        
+        alert(`"${currentSection}" section deleted successfully from database and is now showing as deleted.`);
+        trackChanges(); // Mark that changes were made
+      } else {
+        throw new Error('Delete operation failed');
+      }
+      
+    } catch (error) {
+      console.error('Delete error:', error);
+      console.error('Error details:', error.response?.data);
+      const message = error.response?.data?.error || error.response?.data?.details || error.message || 'Failed to delete section';
+      alert(`Failed to delete section: ${message}`);
+    }
+  };
+
+  // Helper function to get empty data structure for a section
+  const getEmptyDataForSection = (sectionName) => {
+    switch (sectionName) {
+      case 'addresses': return [];
+      case 'socialMedia': return [];
+      case 'occupations': return [];
+      case 'lawyers': return [];
+      case 'courtCases': return [];
+      case 'activeAreas': return [];
+      case 'relativesOfficials': return [];
+      case 'bankDetails': return [];
+      case 'gang': return [];
+      case 'family': return [];
+      case 'vehicles': return [];
+      case 'bodyMarks': return [];
+      case 'usedDevices': return [];
+      case 'callHistory': return [];
+      case 'weapons': return [];
+      case 'phones': return { whatsapp: '', telegram: '', viber: '', other: '', mobile: '', landline: '' };
+      case 'properties': return { currentlyInPossession: [], sold: [], intendedToBuy: [] };
+      case 'enemies': return { individuals: [], gangs: [] };
+      case 'corruptedOfficials': return [];
+      case 'bank': return { accountNumber: '', bankName: '', branch: '', balance: 0 };
+      default: return [];
+    }
+  };
+
+  // Keep the original delete function for complete person deletion if needed
+  const handleCompleteDeletion = async () => {
+    if (!selectedPerson) return;
+    if (!confirm('Are you sure you want to permanently delete this entire person record?')) return;
 
     try {
       await axios.delete(`${API_URL}/person/${selectedPerson}`);
-      alert('Deleted successfully');
+      alert('Person completely deleted from database');
       handleAddNew();
+      setHasChanges(false);
+      setDeletedSections(new Set());
     } catch (error) {
       console.error('Delete error:', error);
       const message = error.response?.data?.message || error.response?.data?.error || 'Failed to delete';
@@ -1028,11 +1213,415 @@ export default function App() {
     }
   };
 
+  // Enhanced change tracking per section per user
+  const [sectionChanges, setSectionChanges] = useState({});
+
+  // Wrapper function to track changes by section and user
+  const trackChanges = (sectionName = null) => {
+    if (!hasChanges) {
+      setHasChanges(true);
+    }
+    
+    // Track changes by section for specific user
+    if (sectionName && selectedPerson) {
+      setSectionChanges(prev => ({
+        ...prev,
+        [`${selectedPerson}_${sectionName}`]: true
+      }));
+    }
+  };
+
+  // Check if specific section has changes for current user
+  const hasSectionChanges = (sectionName) => {
+    if (!selectedPerson) return false;
+    return sectionChanges[`${selectedPerson}_${sectionName}`] || false;
+  };
+
+  // Get sections with changes for current user
+  const getSectionsWithChanges = () => {
+    if (!selectedPerson) return [];
+    const userSections = [];
+    Object.keys(sectionChanges).forEach(key => {
+      if (key.startsWith(`${selectedPerson}_`) && sectionChanges[key]) {
+        const sectionName = key.split('_')[1];
+        userSections.push(sectionName);
+      }
+    });
+    return userSections;
+  };
+
+  // Clear section changes for current user
+  const clearSectionChanges = () => {
+    if (!selectedPerson) return;
+    setSectionChanges(prev => {
+      const newChanges = { ...prev };
+      Object.keys(newChanges).forEach(key => {
+        if (key.startsWith(`${selectedPerson}_`)) {
+          delete newChanges[key];
+        }
+      });
+      return newChanges;
+    });
+  };
+
+  // Utility function to check if a section is deleted
+  const isSectionDeleted = (sectionName) => {
+    return deletedSections.has(sectionName);
+  };
+
+  // Load deleted sections from backend
+  // State to store deleted data for display
+  const [deletedSectionsData, setDeletedSectionsData] = useState({});
+
+  // State for managing deleted records view
+  const [showingDeletedRecords, setShowingDeletedRecords] = useState({});
+  const [deletedRecordsData, setDeletedRecordsData] = useState({});
+
+  // Function to toggle deleted records view for a section
+  const toggleDeletedRecordsView = async (sectionName) => {
+    setShowingDeletedRecords(prev => ({
+      ...prev,
+      [sectionName]: !prev[sectionName]
+    }));
+    
+    // Load deleted records if not already loaded
+    if (!deletedRecordsData[sectionName] && selectedPerson) {
+      await loadDeletedRecordsForSection(sectionName);
+    }
+  };
+
+  // Function to load deleted records for a specific section
+  const loadDeletedRecordsForSection = async (sectionName) => {
+    try {
+      console.log(`🔍 Loading deleted records for section: ${sectionName}`);
+      const response = await axios.get(`${API_URL}/person/${selectedPerson}/section/${sectionName}/deleted-records`);
+      console.log(`🔍 Deleted records for ${sectionName}:`, response.data);
+      
+      setDeletedRecordsData(prev => ({
+        ...prev,
+        [sectionName]: response.data
+      }));
+    } catch (error) {
+      console.error(`Failed to load deleted records for ${sectionName}:`, error);
+    }
+  };
+
+  // Function to delete individual record
+  const deleteIndividualRecord = async (sectionName, recordIndex, deletionReason = '') => {
+    try {
+      console.log(`🗑️ Deleting individual record: ${sectionName}[${recordIndex}]`);
+      
+      const response = await axios.delete(
+        `${API_URL}/person/${selectedPerson}/section/${sectionName}/record/${recordIndex}`,
+        { data: { deletionReason } }
+      );
+      
+      console.log(`✅ Individual record deleted:`, response.data);
+      
+      // Reload the person data to reflect changes
+      await loadPerson(selectedPerson);
+      
+      // Refresh deleted records for this section
+      await loadDeletedRecordsForSection(sectionName);
+      
+      alert('Record deleted successfully!');
+    } catch (error) {
+      console.error(`Failed to delete individual record:`, error);
+      alert(`Failed to delete record: ${error.response?.data?.error || error.message}`);
+    }
+  };
+
+  // Function to restore deleted record
+  const restoreDeletedRecord = async (sectionName, recordIndex) => {
+    try {
+      console.log(`🔄 Restoring deleted record: ${sectionName}[${recordIndex}]`);
+      
+      const response = await axios.post(
+        `${API_URL}/person/${selectedPerson}/section/${sectionName}/restore/${recordIndex}`
+      );
+      
+      console.log(`✅ Record restored:`, response.data);
+      
+      // Reload the person data to reflect changes
+      await loadPerson(selectedPerson);
+      
+      // Refresh deleted records for this section
+      await loadDeletedRecordsForSection(sectionName);
+      
+      alert('Record restored successfully!');
+    } catch (error) {
+      console.error(`Failed to restore record:`, error);
+      alert(`Failed to restore record: ${error.response?.data?.error || error.message}`);
+    }
+  };
+
+  const loadDeletedSections = async (personId) => {
+    try {
+      console.log('🔍 loadDeletedSections called for person:', personId);
+      const response = await axios.get(`${API_URL}/person/${personId}/deleted-sections`);
+      console.log('🔍 loadDeletedSections API response:', response.data);
+      const deletedSectionNames = response.data.map(item => item.sectionName);
+      setDeletedSections(new Set(deletedSectionNames));
+      
+      // Store deleted data for each section
+      const deletedDataMap = {};
+      response.data.forEach(item => {
+        if (item.deletedData) {
+          deletedDataMap[item.sectionName] = item.deletedData;
+        }
+      });
+      setDeletedSectionsData(deletedDataMap);
+      
+      console.log('🔍 loadDeletedSections - Set deleted sections:', deletedSectionNames);
+      console.log('🔍 loadDeletedSections - Set deleted data:', deletedDataMap);
+    } catch (error) {
+      console.error('Failed to load deleted sections:', error);
+      setDeletedSections(new Set()); // Reset on error
+      setDeletedSectionsData({});
+    }
+  };
+
+  // Utility function to get section styling based on deletion status
+  const getSectionStyle = (sectionName, baseStyle = {}) => {
+    if (isSectionDeleted(sectionName)) {
+      return {
+        ...baseStyle,
+        backgroundColor: '#f8f9fa',
+        opacity: 0.7,
+        border: '2px solid #e74c3c',
+        borderRadius: '8px',
+        padding: '15px',
+        position: 'relative'
+      };
+    }
+    return baseStyle;
+  };
+
+  // Reusable component for deleted records button
+  const DeletedRecordsButton = ({ sectionName }) => {
+    const deletedCount = deletedRecordsData[sectionName]?.length || 0;
+    
+    if (isSectionDeleted(sectionName)) {
+      return null; // Don't show when entire section is deleted
+    }
+    
+    return (
+      <button
+        onClick={() => toggleDeletedRecordsView(sectionName)}
+        style={{
+          padding: '8px 16px',
+          marginLeft: '10px',
+          backgroundColor: deletedCount > 0 ? '#e74c3c' : '#6c757d',
+          color: 'white',
+          border: 'none',
+          borderRadius: '5px',
+          cursor: 'pointer',
+          fontSize: '12px',
+          fontWeight: 'bold'
+        }}
+        title={`View ${deletedCount} deleted record${deletedCount !== 1 ? 's' : ''}`}
+      >
+        🗑️ Deleted Records {deletedCount > 0 && `(${deletedCount})`}
+      </button>
+    );
+  };
+
+  // Reusable component for displaying deleted records
+  const DeletedRecordsView = ({ sectionName }) => {
+    if (!showingDeletedRecords[sectionName]) return null;
+    
+    const records = deletedRecordsData[sectionName] || [];
+    
+    return (
+      <div style={{
+        marginTop: '20px',
+        padding: '15px',
+        backgroundColor: '#fff3cd',
+        border: '1px solid #ffeaa7',
+        borderRadius: '8px'
+      }}>
+        <h4 style={{ color: '#856404', marginBottom: '15px' }}>
+          🗑️ Deleted Records ({records.length})
+        </h4>
+        
+        {records.length === 0 ? (
+          <p style={{ color: '#856404', fontStyle: 'italic' }}>No deleted records found.</p>
+        ) : (
+          records.map((record, index) => (
+            <div key={index} style={{
+              marginBottom: '15px',
+              padding: '10px',
+              backgroundColor: '#fff',
+              border: '1px solid #ddd',
+              borderRadius: '5px',
+              borderLeft: '4px solid #e74c3c'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <strong>Record #{record.recordIndex + 1}</strong>
+                  {record.deletionReason && (
+                    <p style={{ color: '#666', fontSize: '12px', margin: '5px 0' }}>
+                      Reason: {record.deletionReason}
+                    </p>
+                  )}
+                  <div style={{ fontSize: '14px', marginTop: '8px' }}>
+                    {renderDeletedRecordData(sectionName, record.data)}
+                  </div>
+                </div>
+                <button
+                  onClick={() => restoreDeletedRecord(sectionName, record.recordIndex)}
+                  style={{
+                    padding: '5px 10px',
+                    backgroundColor: '#28a745',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontSize: '11px'
+                  }}
+                  title="Restore this record"
+                >
+                  🔄 Restore
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    );
+  };
+
+  // Function to render deleted record data based on section type
+  const renderDeletedRecordData = (sectionName, data) => {
+    switch (sectionName) {
+      case 'address':
+        return (
+          <div>
+            <p><strong>Address:</strong> {data.number} {data.street1} {data.street2}</p>
+            <p><strong>Location:</strong> {data.town}, {data.district}, {data.province}</p>
+            <p><strong>Police Area:</strong> {data.police_area} - {data.police_division}</p>
+            <p><strong>Period:</strong> {data.from_date} to {data.end_date || 'Current'}</p>
+          </div>
+        );
+      case 'family':
+        return (
+          <div>
+            <p><strong>Name:</strong> {data.first_name} {data.last_name}</p>
+            <p><strong>Relation:</strong> {data.relation} {data.custom_relation && `(${data.custom_relation})`}</p>
+            <p><strong>Age:</strong> {data.age}</p>
+            <p><strong>Contact:</strong> {data.phone_number}</p>
+          </div>
+        );
+      case 'vehicles':
+        return (
+          <div>
+            <p><strong>Vehicle:</strong> {data.vehicle_number}</p>
+            <p><strong>Make/Model:</strong> {data.make} {data.model}</p>
+          </div>
+        );
+      case 'bodyMarks':
+        return (
+          <div>
+            <p><strong>Type:</strong> {data.type}</p>
+            <p><strong>Location:</strong> {data.location}</p>
+            <p><strong>Description:</strong> {data.description}</p>
+          </div>
+        );
+      case 'usedDevices':
+        return (
+          <div>
+            <p><strong>Device:</strong> {data.device_type}</p>
+            <p><strong>Make/Model:</strong> {data.make} {data.model}</p>
+            <p><strong>Serial:</strong> {data.serial_number}</p>
+            <p><strong>IMEI:</strong> {data.imei_number}</p>
+          </div>
+        );
+      case 'callHistory':
+        return (
+          <div>
+            <p><strong>Device:</strong> {data.device}</p>
+            <p><strong>Call Type:</strong> {data.call_type}</p>
+            <p><strong>Number:</strong> {data.number}</p>
+            <p><strong>Date/Time:</strong> {new Date(data.date_time).toLocaleString()}</p>
+          </div>
+        );
+      case 'weapons':
+        return (
+          <div>
+            <p><strong>Manufacturer:</strong> {data.manufacturer}</p>
+            <p><strong>Model:</strong> {data.model}</p>
+            <p><strong>Caliber:</strong> {data.caliber_marking}</p>
+            <p><strong>Origin:</strong> {data.country_origin}</p>
+            <p><strong>Serial:</strong> {data.serial_number}</p>
+          </div>
+        );
+      default:
+        return (
+          <div>
+            <pre style={{ fontSize: '12px', backgroundColor: '#f8f9fa', padding: '5px', borderRadius: '3px' }}>
+              {JSON.stringify(data, null, 2)}
+            </pre>
+          </div>
+        );
+    }
+  };
+
+  // Individual record delete button component
+  const DeleteRecordButton = ({ sectionName, recordIndex, disabled = false }) => {
+    // Hide delete buttons in search mode
+    if (appMode === 'search') {
+      return null;
+    }
+    
+    const handleDelete = () => {
+      const reason = prompt("Enter reason for deletion (optional):");
+      if (reason !== null) { // User didn't cancel
+        deleteIndividualRecord(sectionName, recordIndex, reason);
+      }
+    };
+    
+    return (
+      <button
+        onClick={handleDelete}
+        disabled={disabled}
+        style={{
+          padding: '5px 10px',
+          backgroundColor: disabled ? '#ccc' : '#dc3545',
+          color: 'white',
+          border: 'none',
+          borderRadius: '3px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          fontSize: '11px',
+          marginLeft: '5px'
+        }}
+        title={disabled ? "Cannot delete" : "Delete this record"}
+      >
+        🗑️ Delete
+      </button>
+    );
+  };
+
+  // Utility function to get input styling for deleted sections
+  const getInputStyle = (sectionName, baseStyle = {}) => {
+    if (isSectionDeleted(sectionName)) {
+      return {
+        ...baseStyle,
+        backgroundColor: '#e9ecef',
+        color: '#6c757d',
+        border: '1px solid #dee2e6',
+        cursor: 'not-allowed',
+        pointerEvents: 'none'
+      };
+    }
+    return baseStyle;
+  };
+
   const updatePersonalField = (field, value) => {
     setFormData(prev => ({
       ...prev,
       personal: { ...prev.personal, [field]: value }
     }));
+    trackChanges('personal');
   };
 
   // Gang details handlers
@@ -1056,6 +1645,7 @@ export default function App() {
         i === index ? { ...gang, [field]: value } : gang
       )
     }));
+    trackChanges();
   };
 
   const removeGangDetail = (index) => {
@@ -1070,6 +1660,7 @@ export default function App() {
       ...prev,
       bank: { ...prev.bank, [field]: value }
     }));
+    trackChanges();
   };
 
   const addFamilyMember = () => {
@@ -1094,6 +1685,7 @@ export default function App() {
         i === index ? { ...member, [field]: value } : member
       )
     }));
+    trackChanges('family');
   };
 
   const removeFamilyMember = (index) => {
@@ -1118,6 +1710,7 @@ export default function App() {
         i === index ? { ...vehicle, [field]: value } : vehicle
       )
     }));
+    trackChanges('vehicles');
   };
 
   const removeVehicle = (index) => {
@@ -1142,6 +1735,7 @@ export default function App() {
         i === index ? { ...mark, [field]: value } : mark
       )
     }));
+    trackChanges('bodyMarks');
   };
 
   const removeBodyMark = (index) => {
@@ -1172,6 +1766,7 @@ export default function App() {
         i === index ? { ...device, [field]: value } : device
       )
     }));
+    trackChanges('usedDevices');
   };
 
   const removeUsedDevice = (index) => {
@@ -1268,6 +1863,7 @@ export default function App() {
         callHistory: newCallHistory
       };
     });
+    trackChanges();
   };
 
   const removeCallHistory = (index) => {
@@ -1307,6 +1903,7 @@ export default function App() {
         i === index ? { ...weapon, [field]: value } : weapon
       )
     }));
+    trackChanges('weapons');
   };
 
   const removeWeapon = (index) => {
@@ -1331,6 +1928,7 @@ export default function App() {
         i === index ? { ...phone, [field]: value } : phone
       )
     }));
+    trackChanges('phone');
   };
 
   const removePhone = (index) => {
@@ -1372,6 +1970,7 @@ export default function App() {
         )
       }
     }));
+    trackChanges('properties');
   };
 
   const removeProperty = (section, index) => {
@@ -1382,6 +1981,7 @@ export default function App() {
         [section]: prev.properties[section].filter((_, i) => i !== index)
       }
     }));
+    trackChanges('properties');
   };
 
   // Property document upload handler
@@ -1461,6 +2061,7 @@ export default function App() {
         )
       }
     }));
+    trackChanges();
   };
 
   const removeEnemyIndividual = (index) => {
@@ -1532,6 +2133,7 @@ export default function App() {
         i === index ? { ...official, [field]: value } : official
       )
     }));
+    trackChanges('corruptedOfficials');
   };
 
   const removeCorruptedOfficial = (index) => {
@@ -1539,6 +2141,7 @@ export default function App() {
       ...prev,
       corruptedOfficials: prev.corruptedOfficials.filter((_, i) => i !== index)
     }));
+    trackChanges('corruptedOfficials');
   };
 
   // Function to create new person and add to dropdown
@@ -1616,6 +2219,7 @@ export default function App() {
   const handleCorruptedOfficialAutoFill = async (index, field, value) => {
     updateCorruptedOfficial(index, field, value);
     
+    // Only auto-fill when NIC or Passport is entered (not when Full Name is entered)
     if ((field === 'officialNic' || field === 'officialPassport') && value) {
       const personData = await searchPersonByIdentifier(value);
       if (personData) {
@@ -1627,36 +2231,29 @@ export default function App() {
           updateCorruptedOfficial(index, 'officialNic', personData.nic);
         }
       }
-    } else if (field === 'officialName' && value) {
-      const personData = await searchPersonByIdentifier(value);
-      if (personData) {
-        if (personData.nic) updateCorruptedOfficial(index, 'officialNic', personData.nic);
-        if (personData.passport) updateCorruptedOfficial(index, 'officialPassport', personData.passport);
-      }
     }
+    // Removed: Full Name → NIC & Passport auto-fill
   };
 
   // Auto-fill for Enemy Individuals
   const handleEnemyAutoFill = async (index, field, value) => {
     updateEnemyIndividual(index, field, value);
     
+    // Only auto-fill when NIC is entered (not when Enemy Name is entered)
     if (field === 'enemyNic' && value) {
       const personData = await searchPersonByIdentifier(value);
       if (personData) {
         updateEnemyIndividual(index, 'enemyName', personData.fullName);
       }
-    } else if (field === 'enemyName' && value) {
-      const personData = await searchPersonByIdentifier(value);
-      if (personData) {
-        if (personData.nic) updateEnemyIndividual(index, 'enemyNic', personData.nic);
-      }
     }
+    // Removed: Enemy Name → NIC auto-fill
   };
 
   // Auto-fill for Relatives Officials
   const handleRelativesOfficialAutoFill = async (index, field, value) => {
     updateRelativesOfficial(index, field, value);
     
+    // Only auto-fill when NIC or Passport is entered (not when Full Name is entered)
     if ((field === 'nicNumber' || field === 'passportNumber') && value) {
       const personData = await searchPersonByIdentifier(value);
       if (personData) {
@@ -1668,19 +2265,15 @@ export default function App() {
           updateRelativesOfficial(index, 'nicNumber', personData.nic);
         }
       }
-    } else if (field === 'fullName' && value) {
-      const personData = await searchPersonByIdentifier(value);
-      if (personData) {
-        if (personData.nic) updateRelativesOfficial(index, 'nicNumber', personData.nic);
-        if (personData.passport) updateRelativesOfficial(index, 'passportNumber', personData.passport);
-      }
     }
+    // Removed: Full Name → NIC & Passport auto-fill
   };
 
   // Auto-fill for Property Owners
   const handlePropertyOwnerAutoFill = async (section, index, field, value) => {
     updateProperty(section, index, field, value);
     
+    // Owner auto-fill - Only when NIC or Passport is entered (not when Full Name is entered)
     if ((field === 'ownerNic' || field === 'ownerPassport') && value) {
       const personData = await searchPersonByIdentifier(value);
       if (personData) {
@@ -1692,13 +2285,23 @@ export default function App() {
           updateProperty(section, index, 'ownerNic', personData.nic);
         }
       }
-    } else if (field === 'ownerFullName' && value) {
+    }
+    // Removed: Owner Full Name → NIC & Passport auto-fill
+    
+    // Buyer auto-fill - Only when NIC or Passport is entered (not when Full Name is entered)
+    if ((field === 'buyerNIC' || field === 'buyerPassport') && value) {
       const personData = await searchPersonByIdentifier(value);
       if (personData) {
-        if (personData.nic) updateProperty(section, index, 'ownerNic', personData.nic);
-        if (personData.passport) updateProperty(section, index, 'ownerPassport', personData.passport);
+        updateProperty(section, index, 'buyerName', personData.fullName);
+        if (field === 'buyerNIC' && personData.passport) {
+          updateProperty(section, index, 'buyerPassport', personData.passport);
+        }
+        if (field === 'buyerPassport' && personData.nic) {
+          updateProperty(section, index, 'buyerNIC', personData.nic);
+        }
       }
     }
+    // Removed: Buyer Name → NIC & Passport auto-fill
   };
 
   // Populate contact information for all call history entries
@@ -1857,27 +2460,377 @@ export default function App() {
     }));
   };
 
-  return (
+  // Show Home Page
+  if (currentPage === 'home') {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column',
+        justifyContent: 'flex-start', 
+        alignItems: 'center', 
+        height: '100vh', 
+        fontFamily: 'Arial, sans-serif',
+        background: '#1e3a8a', // Dark blue background
+        padding: '40px 20px',
+        overflow: 'auto'
+      }}>
+        {/* Header Section */}
+        <div style={{
+          backgroundColor: 'white',
+          borderRadius: '15px',
+          padding: '30px 40px',
+          boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
+          textAlign: 'center',
+          width: '100%',
+          maxWidth: '900px',
+          marginBottom: '40px'
+        }}>
+          <h1 style={{ 
+            color: '#1e3a8a', 
+            fontSize: '36px', 
+            marginBottom: '10px',
+            fontWeight: 'bold'
+          }}>
+            Criminal Data Management System
+          </h1>
+          <p style={{ 
+            color: '#64748b', 
+            fontSize: '16px', 
+            marginBottom: '0',
+            lineHeight: '1.6'
+          }}>
+            Comprehensive criminal data management with advanced analytics and reporting capabilities
+          </p>
+        </div>
+
+        {/* Navigation Cards Grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '25px',
+          width: '100%',
+          maxWidth: '900px',
+          marginBottom: '40px'
+        }}>
+          {/* Enter Data Card */}
+          <div
+            onClick={() => navigateToPage('dashboard', 'enter')}
+            style={{
+              backgroundColor: 'white',
+              color: '#1e3a8a',
+              padding: '30px',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              textAlign: 'center',
+              border: '2px solid #e2e8f0',
+              boxShadow: '0 4px 15px rgba(30, 58, 138, 0.1)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-5px)';
+              e.currentTarget.style.backgroundColor = '#1e3a8a';
+              e.currentTarget.style.color = 'white';
+              e.currentTarget.style.boxShadow = '0 8px 25px rgba(30, 58, 138, 0.25)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.backgroundColor = 'white';
+              e.currentTarget.style.color = '#1e3a8a';
+              e.currentTarget.style.boxShadow = '0 4px 15px rgba(30, 58, 138, 0.1)';
+            }}
+          >
+            <div style={{ fontSize: '40px', marginBottom: '15px' }}>📝</div>
+            <h3 style={{ fontSize: '20px', marginBottom: '10px', fontWeight: 'bold' }}>1. Enter Criminal Data</h3>
+            <p style={{ fontSize: '14px', lineHeight: '1.5', opacity: 0.8 }}>
+              Add new criminal records and personal details to the database
+            </p>
+          </div>
+
+          {/* Search Data Card */}
+          <div
+            onClick={() => navigateToPage('dashboard', 'search')}
+            style={{
+              backgroundColor: 'white',
+              color: '#1e3a8a',
+              padding: '30px',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              textAlign: 'center',
+              border: '2px solid #e2e8f0',
+              boxShadow: '0 4px 15px rgba(30, 58, 138, 0.1)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-5px)';
+              e.currentTarget.style.backgroundColor = '#1e3a8a';
+              e.currentTarget.style.color = 'white';
+              e.currentTarget.style.boxShadow = '0 8px 25px rgba(30, 58, 138, 0.25)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.backgroundColor = 'white';
+              e.currentTarget.style.color = '#1e3a8a';
+              e.currentTarget.style.boxShadow = '0 4px 15px rgba(30, 58, 138, 0.1)';
+            }}
+          >
+            <div style={{ fontSize: '40px', marginBottom: '15px' }}>🔍</div>
+            <h3 style={{ fontSize: '20px', marginBottom: '10px', fontWeight: 'bold' }}>2. Search Criminal Data</h3>
+            <p style={{ fontSize: '14px', lineHeight: '1.5', opacity: 0.8 }}>
+              Search and view existing criminal records and details
+            </p>
+          </div>
+
+          {/* Analysis Card */}
+          <div
+            onClick={() => navigateToPage('dashboard', 'analysis')}
+            style={{
+              backgroundColor: 'white',
+              color: '#1e3a8a',
+              padding: '30px',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              textAlign: 'center',
+              border: '2px solid #e2e8f0',
+              boxShadow: '0 4px 15px rgba(30, 58, 138, 0.1)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-5px)';
+              e.currentTarget.style.backgroundColor = '#1e3a8a';
+              e.currentTarget.style.color = 'white';
+              e.currentTarget.style.boxShadow = '0 8px 25px rgba(30, 58, 138, 0.25)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.backgroundColor = 'white';
+              e.currentTarget.style.color = '#1e3a8a';
+              e.currentTarget.style.boxShadow = '0 4px 15px rgba(30, 58, 138, 0.1)';
+            }}
+          >
+            <div style={{ fontSize: '40px', marginBottom: '15px' }}>📊</div>
+            <h3 style={{ fontSize: '20px', marginBottom: '10px', fontWeight: 'bold' }}>3. Analysis and Reporting</h3>
+            <p style={{ fontSize: '14px', lineHeight: '1.5', opacity: 0.8 }}>
+              Generate reports and analyze criminal data patterns
+            </p>
+          </div>
+
+          {/* API Connection Card */}
+          <div
+            onClick={() => navigateToPage('api-connection')}
+            style={{
+              backgroundColor: 'white',
+              color: '#1e3a8a',
+              padding: '30px',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              textAlign: 'center',
+              border: '2px solid #e2e8f0',
+              boxShadow: '0 4px 15px rgba(30, 58, 138, 0.1)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-5px)';
+              e.currentTarget.style.backgroundColor = '#1e3a8a';
+              e.currentTarget.style.color = 'white';
+              e.currentTarget.style.boxShadow = '0 8px 25px rgba(30, 58, 138, 0.25)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.backgroundColor = 'white';
+              e.currentTarget.style.color = '#1e3a8a';
+              e.currentTarget.style.boxShadow = '0 4px 15px rgba(30, 58, 138, 0.1)';
+            }}
+          >
+            <div style={{ fontSize: '40px', marginBottom: '15px' }}>🔗</div>
+            <h3 style={{ fontSize: '20px', marginBottom: '10px', fontWeight: 'bold' }}>4. External API Connection</h3>
+            <p style={{ fontSize: '14px', lineHeight: '1.5', opacity: 0.8 }}>
+              Connect with external databases and API services
+            </p>
+          </div>
+          </div>
+        {/* Information Section */}
+        <div style={{
+          backgroundColor: 'white',
+          borderRadius: '15px',
+          padding: '30px 40px',
+          boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
+          width: '100%',
+          maxWidth: '900px'
+        }}>
+          <h3 style={{ 
+            color: '#1e3a8a', 
+            marginBottom: '20px', 
+            textAlign: 'center',
+            fontSize: '22px',
+            fontWeight: 'bold'
+          }}>
+            How the System Works:
+          </h3>
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: '1fr',
+            gap: '15px',
+            color: '#64748b',
+            fontSize: '15px',
+            lineHeight: '1.6'
+          }}>
+            <div style={{ 
+              padding: '15px', 
+              backgroundColor: '#f8fafc', 
+              borderRadius: '8px',
+              borderLeft: '4px solid #1e3a8a'
+            }}>
+              <strong style={{ color: '#1e3a8a' }}>Enter Criminal Data:</strong> Access the full data entry interface for adding new criminal records.
+            </div>
+            <div style={{ 
+              padding: '15px', 
+              backgroundColor: '#f8fafc', 
+              borderRadius: '8px',
+              borderLeft: '4px solid #1e3a8a'
+            }}>
+              <strong style={{ color: '#1e3a8a' }}>Search Criminal Data:</strong> Browse and view existing records in read-only mode without edit capabilities.
+            </div>
+            <div style={{ 
+              padding: '15px', 
+              backgroundColor: '#f8fafc', 
+              borderRadius: '8px',
+              borderLeft: '4px solid #1e3a8a'
+            }}>
+              <strong style={{ color: '#1e3a8a' }}>Analysis and Reporting:</strong> Full access to all data with comprehensive reporting tools.
+            </div>
+            <div style={{ 
+              padding: '15px', 
+              backgroundColor: '#f8fafc', 
+              borderRadius: '8px',
+              borderLeft: '4px solid #1e3a8a'
+            }}>
+              <strong style={{ color: '#1e3a8a' }}>External API Connection:</strong> Integrate with external law enforcement databases.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show API Connection Page
+  if (currentPage === 'api-connection') {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh', 
+        fontFamily: 'Arial, sans-serif',
+        background: 'linear-gradient(135deg, #9b59b6, #8e44ad)'
+      }}>
+        <div style={{
+          backgroundColor: 'white',
+          borderRadius: '20px',
+          padding: '50px',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
+          textAlign: 'center',
+          maxWidth: '600px',
+          width: '90%'
+        }}>
+          <div style={{ fontSize: '80px', marginBottom: '20px' }}>🔗</div>
+          <h1 style={{ color: '#2c3e50', marginBottom: '20px' }}>External API Connection</h1>
+          <p style={{ color: '#7f8c8d', fontSize: '18px', marginBottom: '30px' }}>
+            This feature will allow integration with external law enforcement databases and API services.
+          </p>
+          <div style={{ 
+            padding: '20px', 
+            backgroundColor: '#f8f9fa', 
+            borderRadius: '10px', 
+            marginBottom: '30px',
+            border: '2px dashed #dee2e6'
+          }}>
+            <h3 style={{ color: '#6c757d' }}>Coming Soon</h3>
+            <p style={{ color: '#6c757d' }}>API integration functionality is under development</p>
+          </div>
+          <button
+            onClick={goToHomePage}
+            style={{
+              background: 'linear-gradient(135deg, #3498db, #2980b9)',
+              color: 'white',
+              padding: '15px 30px',
+              border: 'none',
+              borderRadius: '10px',
+              fontSize: '16px',
+              cursor: 'pointer',
+              transition: 'transform 0.2s ease'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+          >
+            ← Back to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show Dashboard
+  if (currentPage === 'dashboard') {
+    return (
     <div style={{ display: 'flex', height: '100vh', fontFamily: 'Arial, sans-serif' }}>
       {/* LEFT PANEL */}
       <div style={{ width: '250px', backgroundColor: '#2c3e50', color: 'white', padding: '20px', display: 'flex', flexDirection: 'column', height: '100vh' }}>
-        <h2 style={{ marginBottom: '30px' }}>Dashboard</h2>
-        <button
-          onClick={handleAddNew}
-          style={{
-            width: '100%',
-            padding: '12px',
-            marginBottom: '20px',
-            backgroundColor: '#27ae60',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontSize: '14px'
-          }}
-        >
-          + Add New Person
-        </button>
+        <div style={{ marginBottom: '20px' }}>
+          <h2 style={{ marginBottom: '10px' }}>Dashboard</h2>
+          {appMode !== 'view' && (
+            <div style={{
+              padding: '8px 12px',
+              backgroundColor: appMode === 'enter' ? '#3498db' : 
+                               appMode === 'search' ? '#e74c3c' : '#f39c12',
+              borderRadius: '5px',
+              fontSize: '12px',
+              textAlign: 'center',
+              marginBottom: '10px',
+              fontWeight: 'bold'
+            }}>
+              {appMode === 'enter' ? '📝 ENTER DATA MODE' : 
+               appMode === 'search' ? '🔍 SEARCH MODE' : 
+               '📊 ANALYSIS MODE'}
+            </div>
+          )}
+          <button
+            onClick={goToHomePage}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              backgroundColor: '#34495e',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              marginBottom: '10px',
+              transition: 'background-color 0.2s ease'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#4a6741'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#34495e'}
+          >
+            ← Back to Home
+          </button>
+        </div>
+        {appMode !== 'search' && (
+          <button
+            onClick={handleAddNew}
+            style={{
+              width: '100%',
+              padding: '12px',
+              marginBottom: '20px',
+              backgroundColor: '#27ae60',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            + Add New Person
+          </button>
+        )}
         {/* Page indicator */}
         <div style={{ 
           textAlign: 'center', 
@@ -1923,6 +2876,8 @@ export default function App() {
               bankDetails: 'Bank Details'
             };
 
+            const hasChangesInSection = hasSectionChanges(section);
+            
             return (
               <button
                 key={section}
@@ -1935,10 +2890,30 @@ export default function App() {
                   borderRadius: '5px',
                   cursor: 'pointer',
                   textAlign: 'left',
-                  transition: 'background-color 0.2s'
+                  transition: 'background-color 0.2s',
+                  position: 'relative',
+                  borderLeft: hasChangesInSection ? '4px solid #e74c3c' : 'none'
                 }}
               >
-                {sectionTitles[section] || section}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{sectionTitles[section] || section}</span>
+                  {hasChangesInSection && (
+                    <span style={{
+                      backgroundColor: '#e74c3c',
+                      color: 'white',
+                      borderRadius: '50%',
+                      width: '16px',
+                      height: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '10px',
+                      fontWeight: 'bold'
+                    }}>
+                      •
+                    </span>
+                  )}
+                </div>
               </button>
             );
           })}
@@ -1948,32 +2923,80 @@ export default function App() {
       </div>
 
       {/* CENTER PANEL */}
-      <div style={{ flex: 1, padding: '30px', backgroundColor: '#ecf0f1', overflowY: 'auto' }}>
-        <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <h2 style={{ marginBottom: '20px', color: '#2c3e50' }}>
-            {activeSection === 'personal' && 'Personal Details'}
-            {activeSection === 'address' && 'Address Details'}
-            {activeSection === 'family' && 'Family Members & Friends'}
-            {activeSection === 'vehicles' && 'VEHICLES Details'}
-            {activeSection === 'bodyMarks' && 'BODY MARKS Details'}
-            {activeSection === 'usedDevices' && 'USED DEVICES Details'}
-            {activeSection === 'callHistory' && 'CALL HISTORY Details'}
-            {activeSection === 'weapons' && 'USED WEAPONS Details'}
-            {activeSection === 'phone' && 'PHONE Details'}
-            {activeSection === 'properties' && 'ASSETS OR PROPERTIES Details'}
-            {activeSection === 'enemies' && 'ENEMIES Details'}
-            {activeSection === 'corruptedOfficials' && 'CORRUPTED OFFICIALS Details'}
-            {activeSection === 'socialMedia' && 'SOCIAL MEDIA Details'}
-            {activeSection === 'occupation' && 'OCCUPATION Details'}
-            {activeSection === 'lawyers' && 'LAWYERS Details'}
-            {activeSection === 'courtCases' && 'COURT CASES Details'}
-            {activeSection === 'activeAreas' && 'ACTIVE AREAS Details'}
-            {activeSection === 'relativesOfficials' && 'RELATIVES OFFICIALS Details'}
-            {activeSection === 'bankDetails' && 'BANK DETAILS'}
-          </h2>
+      <div style={{ 
+        flex: 1, 
+        padding: '30px 30px 100px 30px', 
+        backgroundColor: '#ecf0f1', 
+        overflowY: 'auto',
+        position: 'relative'
+      }}>
+        <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+            <h2 style={{ margin: 0, color: '#2c3e50', flex: 1 }}>
+              {activeSection === 'personal' && 'Personal Details'}
+              {activeSection === 'address' && 'Address Details'}
+              {activeSection === 'family' && 'Family Members & Friends'}
+              {activeSection === 'vehicles' && 'VEHICLES Details'}
+              {activeSection === 'bodyMarks' && 'BODY MARKS Details'}
+              {activeSection === 'usedDevices' && 'USED DEVICES Details'}
+              {activeSection === 'callHistory' && 'CALL HISTORY Details'}
+              {activeSection === 'weapons' && 'USED WEAPONS Details'}
+              {activeSection === 'phone' && 'PHONE Details'}
+              {activeSection === 'properties' && 'ASSETS OR PROPERTIES Details'}
+              {activeSection === 'enemies' && 'ENEMIES Details'}
+              {activeSection === 'corruptedOfficials' && 'CORRUPTED OFFICIALS Details'}
+              {activeSection === 'socialMedia' && 'SOCIAL MEDIA Details'}
+              {activeSection === 'occupation' && 'OCCUPATION Details'}
+              {activeSection === 'lawyers' && 'LAWYERS Details'}
+              {activeSection === 'courtCases' && 'COURT CASES Details'}
+              {activeSection === 'activeAreas' && 'ACTIVE AREAS Details'}
+              {activeSection === 'relativesOfficials' && 'RELATIVES OFFICIALS Details'}
+              {activeSection === 'bankDetails' && 'BANK DETAILS'}
+            </h2>
+            
+            {/* Delete Status Indicator */}
+            {isSectionDeleted(activeSection) && (
+              <div style={{
+                backgroundColor: '#e74c3c',
+                color: 'white',
+                padding: '8px 16px',
+                borderRadius: '20px',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                animation: 'pulse 2s infinite'
+              }}>
+                <span>⚠️</span>
+                <span>SECTION DELETED</span>
+              </div>
+            )}
+          </div>
+          
+          {/* Deleted Section Banner */}
+          {isSectionDeleted(activeSection) && (
+            <div style={{
+              backgroundColor: '#fff5f5',
+              border: '2px solid #e74c3c',
+              borderRadius: '8px',
+              padding: '15px',
+              marginBottom: '20px',
+              color: '#721c24'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '24px' }}>🗑️</span>
+                <strong style={{ fontSize: '16px' }}>This Section Has Been Deleted</strong>
+              </div>
+              <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.4' }}>
+                All data in this section has been permanently removed from the database. 
+                The fields below are displaying the deleted state and are not editable.
+              </p>
+            </div>
+          )}
 
           {activeSection === 'personal' && (
-            <div>
+            <div style={getSectionStyle('personal')}>
               {/* Personal Details Tabs */}
               <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '2px solid #e9ecef' }}>
                 <button
@@ -2129,21 +3152,24 @@ export default function App() {
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                     <h3 style={{ color: '#e74c3c', margin: 0 }}>Gang Affiliations</h3>
-                    <button
-                      onClick={addGangDetail}
-                      style={{
-                        padding: '10px 20px',
-                        backgroundColor: '#e74c3c',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        fontSize: '14px',
-                        fontWeight: 'bold'
-                      }}
-                    >
-                      + Add Gang Detail
-                    </button>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <button
+                        onClick={addGangDetail}
+                        style={{
+                          padding: '10px 20px',
+                          backgroundColor: '#e74c3c',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        + Add Gang Detail
+                      </button>
+                      <DeletedRecordsButton sectionName="gang" />
+                    </div>
                   </div>
 
                   {formData.gangDetails.length === 0 && (
@@ -2290,40 +3316,65 @@ export default function App() {
           )}
 
           {activeSection === 'address' && (
-            <div>
-              <button
-                onClick={() => {
-                  setFormData({
-                    ...formData,
-                    addresses: [...formData.addresses, {
-                      number: '',
-                      street1: '',
-                      street2: '',
-                      town: '',
-                      district: '',
-                      province: '',
-                      policeArea: '',
-                      policeDivision: '',
-                      fromDate: '',
-                      endDate: '',
-                      isCurrentlyActive: false
-                    }]
-                  });
-                }}
-                style={{
-                  padding: '12px 24px',
-                  marginBottom: '20px',
-                  backgroundColor: '#3498db',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                + Add Address
-              </button>
+            <div style={getSectionStyle('address')}>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+                {!isSectionDeleted('address') && (
+                  <button
+                    onClick={() => {
+                      setFormData({
+                        ...formData,
+                        addresses: [...formData.addresses, {
+                          number: '',
+                          street1: '',
+                          street2: '',
+                          town: '',
+                          district: '',
+                          province: '',
+                          policeArea: '',
+                          policeDivision: '',
+                          fromDate: '',
+                          endDate: '',
+                          isCurrentlyActive: false
+                        }]
+                      });
+                      trackChanges('address');
+                    }}
+                    style={{
+                      padding: '12px 24px',
+                      backgroundColor: '#3498db',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    + Add Address
+                  </button>
+                )}
+                <DeletedRecordsButton sectionName="address" />
+              </div>
+              
+              {/* Show placeholder when section is deleted */}
+              {isSectionDeleted('address') && formData.addresses.length === 0 && (
+                <div style={{
+                  padding: '40px',
+                  textAlign: 'center',
+                  backgroundColor: '#f8f9fa',
+                  border: '2px dashed #dee2e6',
+                  borderRadius: '8px',
+                  color: '#6c757d'
+                }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>
+                    Address Section Deleted
+                  </div>
+                  <div style={{ fontSize: '14px' }}>
+                    All address records have been permanently removed from the database.
+                  </div>
+                </div>
+              )}
               
               {formData.addresses.map((address, index) => (
                 <div key={index} style={{ 
@@ -2337,25 +3388,47 @@ export default function App() {
                     <h4 style={{ margin: 0, color: '#2c3e50' }}>
                       Address {index + 1}
                     </h4>
-                    <button
-                      onClick={() => {
-                        setFormData({
-                          ...formData,
-                          addresses: formData.addresses.filter((_, i) => i !== index)
-                        });
-                      }}
-                      style={{
+                    {!isSectionDeleted('address') && (
+                      <div style={{ display: 'flex', gap: '5px' }}>
+                        <button
+                          onClick={() => {
+                            setFormData({
+                              ...formData,
+                              addresses: formData.addresses.filter((_, i) => i !== index)
+                            });
+                            trackChanges('address');
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            backgroundColor: '#e74c3c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                        >
+                          Remove
+                        </button>
+                        <DeleteRecordButton 
+                          sectionName="address" 
+                          recordIndex={index} 
+                          disabled={isSectionDeleted('address')} 
+                        />
+                      </div>
+                    )}
+                    
+                    {isSectionDeleted('address') && (
+                      <span style={{
                         padding: '8px 12px',
-                        backgroundColor: '#e74c3c',
+                        backgroundColor: '#6c757d',
                         color: 'white',
-                        border: 'none',
                         borderRadius: '5px',
-                        cursor: 'pointer',
                         fontSize: '12px'
-                      }}
-                    >
-                      Remove
-                    </button>
+                      }}>
+                        DELETED
+                      </span>
+                    )}
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
@@ -2364,12 +3437,14 @@ export default function App() {
                       <input 
                         type="text" 
                         value={address.number} 
+                        disabled={isSectionDeleted('address')}
                         onChange={(e) => {
                           const newAddresses = [...formData.addresses];
                           newAddresses[index].number = e.target.value;
                           setFormData({ ...formData, addresses: newAddresses });
+                          trackChanges('address');
                         }} 
-                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                        style={getInputStyle('address', { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' })} 
                       />
                     </div>
                     <div>
@@ -2377,12 +3452,14 @@ export default function App() {
                       <input 
                         type="text" 
                         value={address.street1} 
+                        disabled={isSectionDeleted('address')}
                         onChange={(e) => {
                           const newAddresses = [...formData.addresses];
                           newAddresses[index].street1 = e.target.value;
                           setFormData({ ...formData, addresses: newAddresses });
+                          trackChanges('address');
                         }} 
-                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                        style={getInputStyle('address', { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' })} 
                       />
                     </div>
                     <div>
@@ -2390,12 +3467,14 @@ export default function App() {
                       <input 
                         type="text" 
                         value={address.street2} 
+                        disabled={isSectionDeleted('address')}
                         onChange={(e) => {
                           const newAddresses = [...formData.addresses];
                           newAddresses[index].street2 = e.target.value;
                           setFormData({ ...formData, addresses: newAddresses });
+                          trackChanges('address');
                         }} 
-                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                        style={getInputStyle('address', { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' })} 
                       />
                     </div>
                     <div>
@@ -2403,6 +3482,7 @@ export default function App() {
                       <input 
                         type="text" 
                         value={address.town} 
+                        disabled={isSectionDeleted('address')}
                         onChange={(e) => {
                           const newAddresses = [...formData.addresses];
                           const townValue = e.target.value;
@@ -2415,9 +3495,10 @@ export default function App() {
                           }
                           
                           setFormData({ ...formData, addresses: newAddresses });
+                          trackChanges('address');
                         }} 
                         list={`towns-${index}`}
-                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                        style={getInputStyle('address', { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' })} 
                       />
                       <datalist id={`towns-${index}`}>
                         {Object.keys(townMapping).map(town => (
@@ -2429,13 +3510,15 @@ export default function App() {
                       <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Province</label>
                       <select 
                         value={address.province} 
+                        disabled={isSectionDeleted('address')}
                         onChange={(e) => {
                           const newAddresses = [...formData.addresses];
                           newAddresses[index].province = e.target.value;
                           newAddresses[index].district = '';
                           setFormData({ ...formData, addresses: newAddresses });
+                          trackChanges('address');
                         }} 
-                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                        style={getInputStyle('address', { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' })}
                       >
                         <option value="">Select Province</option>
                         {Object.keys(provinceDistricts).map((p) => (<option key={p} value={p}>{p}</option>))}
@@ -2445,12 +3528,14 @@ export default function App() {
                       <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>District</label>
                       <select 
                         value={address.district} 
+                        disabled={isSectionDeleted('address')}
                         onChange={(e) => {
                           const newAddresses = [...formData.addresses];
                           newAddresses[index].district = e.target.value;
                           setFormData({ ...formData, addresses: newAddresses });
+                          trackChanges('address');
                         }} 
-                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }}
+                        style={getInputStyle('address', { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' })}
                       >
                         <option value="">Select District</option>
                         {(provinceDistricts[address.province] || []).map(d => (<option key={d} value={d}>{d}</option>))}
@@ -2461,6 +3546,7 @@ export default function App() {
                       <input 
                         type="text" 
                         value={address.policeArea} 
+                        disabled={isSectionDeleted('address')}
                         onChange={(e) => {
                           const newAddresses = [...formData.addresses];
                           const policeAreaValue = e.target.value;
@@ -2472,9 +3558,10 @@ export default function App() {
                           }
                           
                           setFormData({ ...formData, addresses: newAddresses });
+                          trackChanges('address');
                         }} 
                         list={`police-areas-${index}`}
-                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                        style={getInputStyle('address', { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' })} 
                       />
                       <datalist id={`police-areas-${index}`}>
                         {Object.keys(policeAreaMapping).map(policeArea => (
@@ -2487,12 +3574,14 @@ export default function App() {
                       <input 
                         type="text" 
                         value={address.policeDivision} 
+                        disabled={isSectionDeleted('address')}
                         onChange={(e) => {
                           const newAddresses = [...formData.addresses];
                           newAddresses[index].policeDivision = e.target.value;
                           setFormData({ ...formData, addresses: newAddresses });
+                          trackChanges('address');
                         }} 
-                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                        style={getInputStyle('address', { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' })} 
                       />
                     </div>
                     <div>
@@ -2500,12 +3589,14 @@ export default function App() {
                       <input 
                         type="date" 
                         value={address.fromDate} 
+                        disabled={isSectionDeleted('address')}
                         onChange={(e) => {
                           const newAddresses = [...formData.addresses];
                           newAddresses[index].fromDate = e.target.value;
                           setFormData({ ...formData, addresses: newAddresses });
+                          trackChanges('address');
                         }} 
-                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                        style={getInputStyle('address', { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' })} 
                       />
                     </div>
                     {!address.isCurrentlyActive && (
@@ -2514,12 +3605,14 @@ export default function App() {
                         <input 
                           type="date" 
                           value={address.endDate} 
+                          disabled={isSectionDeleted('address')}
                           onChange={(e) => {
                             const newAddresses = [...formData.addresses];
                             newAddresses[index].endDate = e.target.value;
                             setFormData({ ...formData, addresses: newAddresses });
+                            trackChanges('address');
                           }} 
-                          style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' }} 
+                          style={getInputStyle('address', { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px' })} 
                         />
                       </div>
                     )}
@@ -2528,6 +3621,7 @@ export default function App() {
                         type="checkbox" 
                         id={`currently-active-${index}`}
                         checked={address.isCurrentlyActive} 
+                        disabled={isSectionDeleted('address')}
                         onChange={(e) => {
                           const newAddresses = [...formData.addresses];
                           newAddresses[index].isCurrentlyActive = e.target.checked;
@@ -2535,34 +3629,40 @@ export default function App() {
                             newAddresses[index].endDate = '';
                           }
                           setFormData({ ...formData, addresses: newAddresses });
+                          trackChanges('address');
                         }} 
+                        style={isSectionDeleted('address') ? { cursor: 'not-allowed', opacity: 0.6 } : {}}
                       />
-                      <label htmlFor={`currently-active-${index}`} style={{ fontWeight: 'bold' }}>Currently Active</label>
+                      <label htmlFor={`currently-active-${index}`} style={{ fontWeight: 'bold', color: isSectionDeleted('address') ? '#6c757d' : 'inherit' }}>Currently Active</label>
                     </div>
                   </div>
                 </div>
               ))}
+              
+              <DeletedRecordsView sectionName="address" />
             </div>
           )}
 
           {activeSection === 'family' && (
             <div>
-              <button
-                onClick={addFamilyMember}
-                style={{
-                  padding: '12px 24px',
-                  marginBottom: '20px',
-                  backgroundColor: '#3498db',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                + Add Family Member or Friend
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+                <button
+                  onClick={addFamilyMember}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  + Add Family Member or Friend
+                </button>
+                <DeletedRecordsButton sectionName="family" />
+              </div>
               {formData.family.map((member, index) => (
                 <div key={index} style={{ 
                   marginBottom: '25px', 
@@ -2774,22 +3874,26 @@ export default function App() {
 
           {activeSection === 'vehicles' && (
             <div>
-              <button
-                onClick={addVehicle}
-                style={{
-                  padding: '12px 24px',
-                  marginBottom: '20px',
-                  backgroundColor: '#3498db',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                + Add Vehicle
-              </button>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px' }}>
+                {appMode !== 'search' && (
+                  <button
+                    onClick={addVehicle}
+                    style={{
+                      padding: '12px 24px',
+                      backgroundColor: '#3498db',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    + Add Vehicle
+                  </button>
+                )}
+                <DeletedRecordsButton sectionName="vehicles" />
+              </div>
 
               {formData.vehicles.map((vehicle, index) => (
                 <div key={index} style={{
@@ -2901,22 +4005,24 @@ export default function App() {
 
           {activeSection === 'bodyMarks' && (
             <div>
-              <button
-                onClick={addBodyMark}
-                style={{
-                  padding: '12px 24px',
-                  marginBottom: '20px',
-                  backgroundColor: '#3498db',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                + Add Body Mark
-              </button>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px' }}>
+                <button
+                  onClick={addBodyMark}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  + Add Body Mark
+                </button>
+                <DeletedRecordsButton sectionName="bodyMarks" />
+              </div>
 
               {formData.bodyMarks.map((mark, index) => (
                 <div key={index} style={{
@@ -3082,22 +4188,24 @@ export default function App() {
 
           {activeSection === 'usedDevices' && (
             <div>
-              <button
-                onClick={addUsedDevice}
-                style={{
-                  padding: '12px 24px',
-                  marginBottom: '20px',
-                  backgroundColor: '#3498db',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                + Add Device
-              </button>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px' }}>
+                <button
+                  onClick={addUsedDevice}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  + Add Device
+                </button>
+                <DeletedRecordsButton sectionName="usedDevices" />
+              </div>
 
               {formData.usedDevices.map((device, index) => (
                 <div key={index} style={{
@@ -3251,21 +4359,24 @@ export default function App() {
           {activeSection === 'callHistory' && (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <button
-                  onClick={addCallHistory}
-                  style={{
-                    padding: '12px 24px',
-                    backgroundColor: '#3498db',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  + Add Call Record
-                </button>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button
+                    onClick={addCallHistory}
+                    style={{
+                      padding: '12px 24px',
+                      backgroundColor: '#3498db',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    + Add Call Record
+                  </button>
+                  <DeletedRecordsButton sectionName="callHistory" />
+                </div>
                 
                 {isAutoSaving && (
                   <div style={{ 
@@ -3481,22 +4592,24 @@ export default function App() {
 
           {activeSection === 'weapons' && (
             <div>
-              <button
-                onClick={addWeapon}
-                style={{
-                  padding: '12px 24px',
-                  marginBottom: '20px',
-                  backgroundColor: '#3498db',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                + Add Weapon
-              </button>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px' }}>
+                <button
+                  onClick={addWeapon}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  + Add Weapon
+                </button>
+                <DeletedRecordsButton sectionName="weapons" />
+              </div>
 
               {formData.weapons.map((weapon, index) => (
                 <div key={index} style={{
@@ -3648,22 +4761,24 @@ export default function App() {
 
           {activeSection === 'phone' && (
             <div>
-              <button
-                onClick={addPhone}
-                style={{
-                  padding: '12px 24px',
-                  marginBottom: '20px',
-                  backgroundColor: '#3498db',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}
-              >
-                + Add Phone Number
-              </button>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px' }}>
+                <button
+                  onClick={addPhone}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  + Add Phone Number
+                </button>
+                <DeletedRecordsButton sectionName="phone" />
+              </div>
 
               {formData.phones.map((phone, index) => (
                 <div key={index} style={{
@@ -3883,27 +4998,32 @@ export default function App() {
               })()}
 
               {/* Properties Tabs */}
-              <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '2px solid #e9ecef' }}>
-                {['currentlyInPossession', 'sold', 'intendedToBuy'].map((section) => (
-                  <button
-                    key={section}
-                    onClick={() => setActivePropertiesTab(section)}
-                    style={{
-                      padding: '12px 24px',
-                      backgroundColor: activePropertiesTab === section ? '#3498db' : '#f8f9fa',
-                      color: activePropertiesTab === section ? 'white' : '#2c3e50',
-                      border: 'none',
-                      borderRadius: '5px 5px 0 0',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: 'bold',
-                      marginRight: '5px'
-                    }}
-                  >
-                    {section === 'currentlyInPossession' ? 'Currently in Possession' :
-                     section === 'sold' ? 'Sold' : 'Intended to Buy'}
-                  </button>
-                ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px', borderBottom: '2px solid #e9ecef' }}>
+                <div style={{ display: 'flex' }}>
+                  {['currentlyInPossession', 'sold', 'intendedToBuy'].map((section) => (
+                    <button
+                      key={section}
+                      onClick={() => setActivePropertiesTab(section)}
+                      style={{
+                        padding: '12px 24px',
+                        backgroundColor: activePropertiesTab === section ? '#3498db' : '#f8f9fa',
+                        color: activePropertiesTab === section ? 'white' : '#2c3e50',
+                        border: 'none',
+                        borderRadius: '5px 5px 0 0',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        marginRight: '5px'
+                      }}
+                    >
+                      {section === 'currentlyInPossession' ? 'Currently in Possession' :
+                       section === 'sold' ? 'Sold' : 'Intended to Buy'}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ paddingBottom: '12px' }}>
+                  <DeletedRecordsButton sectionName="properties" />
+                </div>
               </div>
 
               {/* Currently in Possession Section */}
@@ -4057,7 +5177,7 @@ export default function App() {
                                 type="text"
                                 placeholder="Enter owner's full name"
                                 value={property.ownerFullName || ''}
-                                onChange={(e) => handlePropertyOwnerAutoFill('currentlyInPossession', index, 'ownerFullName', e.target.value)}
+                                onChange={(e) => updateProperty('currentlyInPossession', index, 'ownerFullName', e.target.value)}
                                 style={{
                                   width: '100%',
                                   padding: '10px',
@@ -4358,7 +5478,7 @@ export default function App() {
                                 type="text"
                                 placeholder="Enter buyer's NIC number"
                                 value={property.buyerNIC}
-                                onChange={(e) => updateProperty('sold', index, 'buyerNIC', e.target.value)}
+                                onChange={(e) => handlePropertyOwnerAutoFill('sold', index, 'buyerNIC', e.target.value)}
                                 style={{
                                   width: '100%',
                                   padding: '10px',
@@ -4378,7 +5498,7 @@ export default function App() {
                                 type="text"
                                 placeholder="Enter buyer's passport number"
                                 value={property.buyerPassport}
-                                onChange={(e) => updateProperty('sold', index, 'buyerPassport', e.target.value)}
+                                onChange={(e) => handlePropertyOwnerAutoFill('sold', index, 'buyerPassport', e.target.value)}
                                 style={{
                                   width: '100%',
                                   padding: '10px',
@@ -4606,7 +5726,7 @@ export default function App() {
                                 type="text"
                                 placeholder="Enter owner's full name"
                                 value={property.ownerFullName || ''}
-                                onChange={(e) => handlePropertyOwnerAutoFill('intendedToBuy', index, 'ownerFullName', e.target.value)}
+                                onChange={(e) => updateProperty('intendedToBuy', index, 'ownerFullName', e.target.value)}
                                 style={{
                                   width: '100%',
                                   padding: '10px',
@@ -4724,38 +5844,43 @@ export default function App() {
           {/* ENEMIES SECTION */}
           {activeSection === 'enemies' && (
             <div>
-              <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '2px solid #e9ecef' }}>
-                <button
-                  onClick={() => setActivePersonalTab('enemyIndividuals')}
-                  style={{
-                    padding: '12px 24px',
-                    backgroundColor: activePersonalTab === 'enemyIndividuals' ? '#e74c3c' : '#f8f9fa',
-                    color: activePersonalTab === 'enemyIndividuals' ? 'white' : '#2c3e50',
-                    border: 'none',
-                    borderRadius: '5px 5px 0 0',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 'bold',
-                    marginRight: '5px'
-                  }}
-                >
-                  Enemy Individuals
-                </button>
-                <button
-                  onClick={() => setActivePersonalTab('enemyGangs')}
-                  style={{
-                    padding: '12px 24px',
-                    backgroundColor: activePersonalTab === 'enemyGangs' ? '#e74c3c' : '#f8f9fa',
-                    color: activePersonalTab === 'enemyGangs' ? 'white' : '#2c3e50',
-                    border: 'none',
-                    borderRadius: '5px 5px 0 0',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  Enemy Gangs
-                </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px', borderBottom: '2px solid #e9ecef' }}>
+                <div style={{ display: 'flex' }}>
+                  <button
+                    onClick={() => setActivePersonalTab('enemyIndividuals')}
+                    style={{
+                      padding: '12px 24px',
+                      backgroundColor: activePersonalTab === 'enemyIndividuals' ? '#e74c3c' : '#f8f9fa',
+                      color: activePersonalTab === 'enemyIndividuals' ? 'white' : '#2c3e50',
+                      border: 'none',
+                      borderRadius: '5px 5px 0 0',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      marginRight: '5px'
+                    }}
+                  >
+                    Enemy Individuals
+                  </button>
+                  <button
+                    onClick={() => setActivePersonalTab('enemyGangs')}
+                    style={{
+                      padding: '12px 24px',
+                      backgroundColor: activePersonalTab === 'enemyGangs' ? '#e74c3c' : '#f8f9fa',
+                      color: activePersonalTab === 'enemyGangs' ? 'white' : '#2c3e50',
+                      border: 'none',
+                      borderRadius: '5px 5px 0 0',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    Enemy Gangs
+                  </button>
+                </div>
+                <div style={{ paddingBottom: '12px' }}>
+                  <DeletedRecordsButton sectionName="enemies" />
+                </div>
               </div>
 
               {/* Enemy Individuals Section */}
@@ -4830,7 +5955,7 @@ export default function App() {
                           <input
                             type="text"
                             value={enemy.enemyName}
-                            onChange={(e) => handleEnemyAutoFill(index, 'enemyName', e.target.value)}
+                            onChange={(e) => updateEnemyIndividual(index, 'enemyName', e.target.value)}
                             style={{
                               width: '100%',
                               padding: '10px',
@@ -5100,21 +6225,24 @@ export default function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h3 style={{ color: '#dc3545', margin: 0 }}>Corrupted Officials</h3>
-                <button
-                  onClick={addCorruptedOfficial}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: '#dc3545',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  + Add Corrupted Official
-                </button>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button
+                    onClick={addCorruptedOfficial}
+                    style={{
+                      padding: '10px 20px',
+                      backgroundColor: '#dc3545',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    + Add Corrupted Official
+                  </button>
+                  <DeletedRecordsButton sectionName="corruptedOfficials" />
+                </div>
               </div>
 
               {formData.corruptedOfficials.length === 0 && (
@@ -5195,7 +6323,7 @@ export default function App() {
                       <input
                         type="text"
                         value={official.officialName}
-                        onChange={(e) => handleCorruptedOfficialAutoFill(index, 'officialName', e.target.value)}
+                        onChange={(e) => updateCorruptedOfficial(index, 'officialName', e.target.value)}
                         style={{
                           width: '100%',
                           padding: '10px',
@@ -5297,7 +6425,10 @@ export default function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h3 style={{ color: '#6f42c1', margin: 0 }}>Social Media</h3>
-                <button onClick={addSocialMedia} style={{ padding: '10px 20px', backgroundColor: '#6f42c1', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Social Media</button>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button onClick={addSocialMedia} style={{ padding: '10px 20px', backgroundColor: '#6f42c1', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Social Media</button>
+                  <DeletedRecordsButton sectionName="socialMedia" />
+                </div>
               </div>
 
               {(formData.socialMedia||[]).length === 0 && (
@@ -5349,7 +6480,10 @@ export default function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h3 style={{ color: '#20c997', margin: 0 }}>Occupation</h3>
-                <button onClick={addOccupation} style={{ padding: '10px 20px', backgroundColor: '#20c997', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Occupation</button>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button onClick={addOccupation} style={{ padding: '10px 20px', backgroundColor: '#20c997', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Occupation</button>
+                  <DeletedRecordsButton sectionName="occupation" />
+                </div>
               </div>
 
               {(formData.occupations||[]).length === 0 && (
@@ -5396,7 +6530,10 @@ export default function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h3 style={{ color: '#7e57c2', margin: 0 }}>Lawyers Details</h3>
-                <button onClick={addLawyerWithCaseSelect} style={{ padding: '10px 20px', backgroundColor: '#7e57c2', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Lawyer</button>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button onClick={addLawyerWithCaseSelect} style={{ padding: '10px 20px', backgroundColor: '#7e57c2', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Lawyer</button>
+                  <DeletedRecordsButton sectionName="lawyers" />
+                </div>
               </div>
 
               {(formData.lawyers||[]).length === 0 && (
@@ -5449,7 +6586,10 @@ export default function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h3 style={{ color: '#ff7043', margin: 0 }}>Court Cases</h3>
-                <button onClick={addCourtCase} style={{ padding: '10px 20px', backgroundColor: '#ff7043', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Court Case</button>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button onClick={addCourtCase} style={{ padding: '10px 20px', backgroundColor: '#ff7043', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Court Case</button>
+                  <DeletedRecordsButton sectionName="courtCases" />
+                </div>
               </div>
 
               {(formData.courtCases||[]).length === 0 && (
@@ -5489,7 +6629,10 @@ export default function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h3 style={{ color: '#26a69a', margin: 0 }}>Active Areas</h3>
-                <button onClick={addActiveArea} style={{ padding: '10px 20px', backgroundColor: '#26a69a', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Active Area</button>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button onClick={addActiveArea} style={{ padding: '10px 20px', backgroundColor: '#26a69a', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Active Area</button>
+                  <DeletedRecordsButton sectionName="activeAreas" />
+                </div>
               </div>
 
               {(formData.activeAreas||[]).length === 0 && (
@@ -5563,7 +6706,10 @@ export default function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h3 style={{ color: '#5c6bc0', margin: 0 }}>Relatives Officials</h3>
-                <button onClick={addRelativesOfficial} style={{ padding: '10px 20px', backgroundColor: '#5c6bc0', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Relatives Official</button>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button onClick={addRelativesOfficial} style={{ padding: '10px 20px', backgroundColor: '#5c6bc0', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Relatives Official</button>
+                  <DeletedRecordsButton sectionName="relativesOfficials" />
+                </div>
               </div>
 
               {(formData.relativesOfficials||[]).length === 0 && (
@@ -5582,7 +6728,7 @@ export default function App() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Full Name <small style={{ color: '#666' }}>(Auto-fills from NIC/Passport)</small></label>
-                      <input type="text" value={relativesOfficial.fullName} onChange={(e) => handleRelativesOfficialAutoFill(index, 'fullName', e.target.value)} style={{ width: '100%', padding: '8px' }} />
+                      <input type="text" value={relativesOfficial.fullName} onChange={(e) => updateRelativesOfficial(index, 'fullName', e.target.value)} style={{ width: '100%', padding: '8px' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>NIC Number <small style={{ color: '#666' }}>(Auto-fills name)</small></label>
@@ -5611,7 +6757,10 @@ export default function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h3 style={{ color: '#ef5350', margin: 0 }}>Bank Details</h3>
-                <button onClick={addBankDetail} style={{ padding: '10px 20px', backgroundColor: '#ef5350', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Bank Detail</button>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button onClick={addBankDetail} style={{ padding: '10px 20px', backgroundColor: '#ef5350', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}>+ Add Bank Detail</button>
+                  <DeletedRecordsButton sectionName="bankDetails" />
+                </div>
               </div>
 
               {(formData.bankDetails||[]).length === 0 && (
@@ -5726,45 +6875,13 @@ export default function App() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '10px', marginTop: '30px' }}>
-            <button
-              onClick={handleUpdate}
-              style={{
-                flex: 1,
-                padding: '12px',
-                backgroundColor: '#27ae60',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: 'pointer',
-                fontSize: '16px'
-              }}
-            >
-              {selectedPerson ? 'Update' : 'Create'}
-            </button>
-            {selectedPerson && (
-              <button
-                onClick={handleDelete}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  backgroundColor: '#e74c3c',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '16px'
-                }}
-              >
-                Delete
-              </button>
-            )}
-          </div>
+
         </div>
       </div>
 
-      {/* RIGHT PANEL */}
-      <div style={{ width: '300px', backgroundColor: '#34495e', color: 'white', padding: '20px' }}>
+      {/* RIGHT PANEL - Hidden in Enter Mode */}
+      {appMode !== 'enter' && (
+        <div style={{ width: '300px', backgroundColor: '#34495e', color: 'white', padding: '20px' }}>
         <h3 style={{ marginBottom: '20px' }}>Search</h3>
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
           <input
@@ -5829,6 +6946,165 @@ export default function App() {
           ))}
         </div>
       </div>
+      )}
+      
+      {/* GLOBAL BUTTONS - Bottom Background Strip - Full Width */}
+      <div style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0, // Start from very left edge
+        right: 0, // Extend to very right edge
+        height: '80px',
+        backgroundColor: 'transparent', // Transparent to allow individual sections
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '20px',
+        zIndex: 1000,
+        borderRadius: '0'
+      }}>
+        {/* Left Panel Extension */}
+        <div style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: '250px',
+          height: '80px',
+          backgroundColor: '#2c3e50', // Match left panel
+          borderTop: '1px solid #34495e'
+        }}></div>
+        
+        {/* Center Panel Extension */}
+        <div style={{
+          position: 'absolute',
+          left: '250px',
+          right: '300px',
+          top: 0,
+          height: '80px',
+          backgroundColor: '#2c3e50', // Dark background for button area
+          borderTop: '1px solid #34495e'
+        }}></div>
+        
+        {/* Right Panel Extension */}
+        <div style={{
+          position: 'absolute',
+          right: 0,
+          top: 0,
+          width: '300px',
+          height: '80px',
+          backgroundColor: '#34495e', // Match right panel
+          borderTop: '1px solid #2c3e50'
+        }}></div>
+        
+        {/* Buttons Container - Hidden in search mode */}
+        {appMode !== 'search' && (
+          <div style={{
+            position: 'relative',
+            zIndex: 1001,
+            display: 'flex',
+            gap: '20px'
+          }}>
+          <button
+            onClick={handleUpdate}
+            disabled={!hasChanges && selectedPerson}
+            style={{
+            padding: '14px 35px',
+            backgroundColor: hasChanges ? '#27ae60' : '#7f8c8d',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: hasChanges || !selectedPerson ? 'pointer' : 'not-allowed',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            transition: 'all 0.3s ease',
+            opacity: hasChanges || !selectedPerson ? 1 : 0.6,
+            position: 'relative',
+            minWidth: '180px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+          }}
+          onMouseEnter={(e) => {
+            if (hasChanges || !selectedPerson) {
+              e.target.style.backgroundColor = '#229954';
+              e.target.style.transform = 'translateY(-2px)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (hasChanges || !selectedPerson) {
+              e.target.style.backgroundColor = hasChanges ? '#27ae60' : '#7f8c8d';
+              e.target.style.transform = 'translateY(0)';
+            }
+          }}
+          title={
+            selectedPerson && hasChanges 
+              ? `Update changes in sections: ${getSectionsWithChanges().join(', ') || 'Multiple sections'}` 
+              : selectedPerson 
+                ? 'No changes to save'
+                : 'Create new person'
+          }
+        >
+          {hasChanges && selectedPerson && (
+            <span style={{
+              position: 'absolute',
+              top: '-8px',
+              right: '-8px',
+              backgroundColor: '#e74c3c',
+              color: 'white',
+              borderRadius: '50%',
+              width: '22px',
+              height: '22px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              animation: 'pulse 1.5s infinite'
+            }}>
+              {getSectionsWithChanges().length || '!'}
+            </span>
+          )}
+          {selectedPerson 
+            ? hasChanges 
+              ? `Update Changes (${getSectionsWithChanges().length} sections)` 
+              : 'No Changes to Update'
+            : 'Create Person'
+          }
+        </button>
+        
+        {selectedPerson && activeSection !== 'personal' && (
+          <button
+            onClick={handleGlobalDelete}
+            style={{
+              padding: '14px 35px',
+              backgroundColor: '#e74c3c',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              transition: 'all 0.3s ease',
+              minWidth: '180px',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = '#c0392b';
+              e.target.style.transform = 'translateY(-2px)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#e74c3c';
+              e.target.style.transform = 'translateY(0)';
+            }}
+          >
+            Delete "{activeSection.charAt(0).toUpperCase() + activeSection.slice(1)}" Section
+          </button>
+        )}
+          </div>
+        )}
+      </div>
     </div>
-  );
+    );
+  }
+
+  // Default return
+  return null;
 }

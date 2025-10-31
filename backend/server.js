@@ -974,6 +974,36 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
       await client.query('DELETE FROM bank_accounts WHERE person_id = $1', [id]);
     }
     
+    // Clear deleted section records for sections that are being updated with new data
+    const sectionsToCheck = [
+      { data: gangDetails, section: 'gang' },
+      { data: family, section: 'family' },
+      { data: vehicles, section: 'vehicles' },
+      { data: bodyMarks, section: 'bodyMarks' },
+      { data: usedDevices, section: 'usedDevices' },
+      { data: callHistory, section: 'callHistory' },
+      { data: weapons, section: 'weapons' },
+      { data: secondPhone, section: 'phone' },
+      { data: properties, section: 'properties' },
+      { data: socialMedia, section: 'socialMedia' },
+      { data: occupations, section: 'occupations' },
+      { data: lawyers, section: 'lawyers' },
+      { data: courtCases, section: 'courtCases' },
+      { data: activeAreas, section: 'activeAreas' },
+      { data: relativesOfficials, section: 'relativesOfficials' },
+      { data: bankDetails, section: 'bankDetails' },
+      { data: corruptedOfficials, section: 'corruptedOfficials' },
+      { data: enemies?.individuals, section: 'enemies' },
+      { data: enemies?.gangs, section: 'enemyGangs' }
+    ];
+    
+    for (const { data, section } of sectionsToCheck) {
+      if (data && ((Array.isArray(data) && data.length > 0) || (typeof data === 'object' && Object.keys(data).some(key => data[key])))) {
+        console.log(`Clearing deleted section record for ${section} as new data is being added`);
+        await client.query('DELETE FROM deleted_sections WHERE person_id = $1 AND section_name = $2', [id, section]);
+      }
+    }
+
     // Delete and recreate all related records (simpler approach)
     await client.query('DELETE FROM gang_details WHERE person_id = $1', [id]);
     await client.query('DELETE FROM family_members WHERE person_id = $1', [id]);
@@ -1516,6 +1546,9 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     if (req.body.addresses && Array.isArray(req.body.addresses)) {
       console.log('Processing addresses for person', id, ':', req.body.addresses.length, 'addresses');
       
+      // Clear deleted section record if we're adding new data to previously deleted section
+      await client.query('DELETE FROM deleted_sections WHERE person_id = $1 AND section_name = $2', [id, 'address']);
+      
       // First, delete existing addresses for this person
       await client.query('DELETE FROM addresses WHERE person_id = $1', [id]);
       
@@ -2003,23 +2036,432 @@ app.get('/api/search-by-phone/:phoneNumber', async (req, res) => {
   }
 });
 
-// Start server with explicit IPv4 binding
+// DELETE SECTION DATA BY PERSON ID AND SECTION
+app.delete('/api/person/:id/section/:sectionName', checkDbConnection, async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    const { id, sectionName } = req.params;
+    
+    console.log(`Deleting section "${sectionName}" for person ID: ${id}`);
+    
+    await client.query('BEGIN');
+    
+    // First, get the data before deleting to store it for display purposes
+    let deletedData = {};
+    
+    // Map section names to their corresponding table deletion queries
+    switch (sectionName.toLowerCase()) {
+      case 'address':
+      case 'addresses':
+        // Get existing data before deletion
+        const addressData = await client.query('SELECT * FROM addresses WHERE person_id = $1', [id]);
+        deletedData.addresses = addressData.rows;
+        await client.query('DELETE FROM addresses WHERE person_id = $1', [id]);
+        break;
+      
+      case 'social-media':
+      case 'socialmedia':
+      case 'socialMedia':
+        const socialMediaData = await client.query('SELECT * FROM social_media WHERE person_id = $1', [id]);
+        deletedData.socialMedia = socialMediaData.rows;
+        await client.query('DELETE FROM social_media WHERE person_id = $1', [id]);
+        break;
+      
+      case 'occupation':
+      case 'occupations':
+        const occupationData = await client.query('SELECT * FROM occupations WHERE person_id = $1', [id]);
+        deletedData.occupations = occupationData.rows;
+        await client.query('DELETE FROM occupations WHERE person_id = $1', [id]);
+        break;
+      
+      case 'lawyers':
+        const lawyersData = await client.query('SELECT * FROM lawyers WHERE person_id = $1', [id]);
+        deletedData.lawyers = lawyersData.rows;
+        await client.query('DELETE FROM lawyers WHERE person_id = $1', [id]);
+        break;
+      
+      case 'court-cases':
+      case 'courtcases':
+      case 'courtCases':
+        const courtCasesData = await client.query('SELECT * FROM court_cases WHERE person_id = $1', [id]);
+        deletedData.courtCases = courtCasesData.rows;
+        await client.query('DELETE FROM court_cases WHERE person_id = $1', [id]);
+        break;
+      
+      case 'active-areas':
+      case 'activeareas':
+      case 'activeAreas':
+        const activeAreasData = await client.query('SELECT * FROM active_areas WHERE person_id = $1', [id]);
+        deletedData.activeAreas = activeAreasData.rows;
+        await client.query('DELETE FROM active_areas WHERE person_id = $1', [id]);
+        break;
+      
+      case 'relatives-officials':
+      case 'relativesofficials':
+      case 'relativesOfficials':
+        const relativesOfficialsData = await client.query('SELECT * FROM relatives_officials WHERE person_id = $1', [id]);
+        deletedData.relativesOfficials = relativesOfficialsData.rows;
+        await client.query('DELETE FROM relatives_officials WHERE person_id = $1', [id]);
+        break;
+      
+      case 'bank-details':
+      case 'bankdetails':
+      case 'bankDetails':
+        const bankDetailsData = await client.query('SELECT * FROM bank_details WHERE person_id = $1', [id]);
+        deletedData.bankDetails = bankDetailsData.rows;
+        await client.query('DELETE FROM bank_details WHERE person_id = $1', [id]);
+        break;
+      
+      case 'gang':
+      case 'gangdetails':
+        const gangData = await client.query('SELECT * FROM gang_details WHERE person_id = $1', [id]);
+        deletedData.gangDetails = gangData.rows;
+        await client.query('DELETE FROM gang_details WHERE person_id = $1', [id]);
+        break;
+      
+      case 'family':
+        const familyData = await client.query('SELECT * FROM family_members WHERE person_id = $1', [id]);
+        deletedData.family = familyData.rows;
+        await client.query('DELETE FROM family_members WHERE person_id = $1', [id]);
+        break;
+      
+      case 'vehicles':
+        const vehiclesData = await client.query('SELECT * FROM vehicles WHERE person_id = $1', [id]);
+        deletedData.vehicles = vehiclesData.rows;
+        await client.query('DELETE FROM vehicles WHERE person_id = $1', [id]);
+        break;
+      
+      case 'body-marks':
+      case 'bodymarks':
+      case 'bodyMarks':
+        const bodyMarksData = await client.query('SELECT * FROM body_marks WHERE person_id = $1', [id]);
+        deletedData.bodyMarks = bodyMarksData.rows;
+        await client.query('DELETE FROM body_marks WHERE person_id = $1', [id]);
+        break;
+      
+      case 'devices':
+      case 'useddevices':
+      case 'usedDevices':
+        const usedDevicesData = await client.query('SELECT * FROM used_devices WHERE person_id = $1', [id]);
+        deletedData.usedDevices = usedDevicesData.rows;
+        await client.query('DELETE FROM used_devices WHERE person_id = $1', [id]);
+        break;
+      
+      case 'call-history':
+      case 'callhistory':
+      case 'callHistory':
+        const callHistoryData = await client.query('SELECT * FROM call_history WHERE person_id = $1', [id]);
+        deletedData.callHistory = callHistoryData.rows;
+        await client.query('DELETE FROM call_history WHERE person_id = $1', [id]);
+        break;
+      
+      case 'weapons':
+        const weaponsData = await client.query('SELECT * FROM used_weapons WHERE person_id = $1', [id]);
+        deletedData.weapons = weaponsData.rows;
+        await client.query('DELETE FROM used_weapons WHERE person_id = $1', [id]);
+        break;
+      
+      case 'phone':
+      case 'phones':
+      case 'secondphone':
+        const phoneData = await client.query('SELECT * FROM second_phone WHERE person_id = $1', [id]);
+        deletedData.phone = phoneData.rows;
+        await client.query('DELETE FROM second_phone WHERE person_id = $1', [id]);
+        break;
+      
+      case 'properties':
+        const propertiesData = await client.query('SELECT * FROM properties WHERE person_id = $1', [id]);
+        deletedData.properties = propertiesData.rows;
+        await client.query('DELETE FROM properties WHERE person_id = $1', [id]);
+        break;
+      
+      case 'enemies':
+        const enemyIndividualsData = await client.query('SELECT * FROM enemy_individuals WHERE person_id = $1', [id]);
+        const enemyGangsData = await client.query('SELECT * FROM enemy_gangs WHERE person_id = $1', [id]);
+        deletedData.enemies = { individuals: enemyIndividualsData.rows, gangs: enemyGangsData.rows };
+        await client.query('DELETE FROM enemy_individuals WHERE person_id = $1', [id]);
+        await client.query('DELETE FROM enemy_gangs WHERE person_id = $1', [id]);
+        break;
+      
+      case 'corrupted-officials':
+      case 'corruptedofficials':
+      case 'corruptedOfficials':
+        const corruptedOfficialsData = await client.query('SELECT * FROM corrupted_officials WHERE person_id = $1', [id]);
+        deletedData.corruptedOfficials = corruptedOfficialsData.rows;
+        await client.query('DELETE FROM corrupted_officials WHERE person_id = $1', [id]);
+        break;
+      
+      case 'bank':
+        const bankData = await client.query('SELECT * FROM bank_accounts WHERE person_id = $1', [id]);
+        deletedData.bank = bankData.rows;
+        await client.query('DELETE FROM bank_accounts WHERE person_id = $1', [id]);
+        break;
+      
+      default:
+        throw new Error(`Unknown section: ${sectionName}`);
+    }
+    
+    // Insert or update deletion status in a separate table to track what was deleted
+    console.log(`Storing deleted data for section "${sectionName}":`, JSON.stringify(deletedData, null, 2));
+    await client.query(`
+      INSERT INTO deleted_sections (person_id, section_name, deleted_at, deleted_data) 
+      VALUES ($1, $2, CURRENT_TIMESTAMP, $3)
+      ON CONFLICT (person_id, section_name) 
+      DO UPDATE SET deleted_at = CURRENT_TIMESTAMP, is_deleted = true, deleted_data = $3
+    `, [id, sectionName.toLowerCase(), JSON.stringify(deletedData)]);
+    
+    await client.query('COMMIT');
+    console.log(`✅ Successfully deleted section "${sectionName}" for person ID: ${id}`);
+    
+    res.json({ 
+      success: true, 
+      message: `Section "${sectionName}" deleted successfully`,
+      sectionName: sectionName,
+      personId: id
+    });
+    
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(`❌ Failed to delete section "${req.params.sectionName}" for person ID: ${req.params.id}`, err);
+    res.status(500).json({ 
+      error: 'Failed to delete section', 
+      details: err.message,
+      section: req.params.sectionName
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// GET DELETED SECTIONS FOR A PERSON
+// Delete individual record from any section
+app.delete('/api/person/:id/section/:sectionName/record/:recordIndex', checkDbConnection, async (req, res) => {
+  try {
+    const { id, sectionName, recordIndex } = req.params;
+    const { deletionReason } = req.body;
+    
+    console.log(`🗑️ Deleting individual record from ${sectionName} section, person ${id}, index ${recordIndex}`);
+    
+    // First, get the current data for this section to extract the specific record
+    const personResult = await pool.query('SELECT * FROM people WHERE id = $1', [id]);
+    if (personResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Person not found' });
+    }
+    
+    // Get section data based on section name
+    let sectionData = [];
+    let tableName = '';
+    let sectionDataResult;
+    
+    switch (sectionName) {
+      case 'address':
+        sectionDataResult = await pool.query('SELECT * FROM addresses WHERE person_id = $1 ORDER BY id', [id]);
+        sectionData = sectionDataResult.rows;
+        tableName = 'addresses';
+        break;
+      case 'family':
+        sectionDataResult = await pool.query('SELECT * FROM family_members WHERE person_id = $1 ORDER BY id', [id]);
+        sectionData = sectionDataResult.rows;
+        tableName = 'family_members';
+        break;
+      case 'vehicles':
+        sectionDataResult = await pool.query('SELECT * FROM vehicles WHERE person_id = $1 ORDER BY id', [id]);
+        sectionData = sectionDataResult.rows;
+        tableName = 'vehicles';
+        break;
+      case 'bodyMarks':
+        sectionDataResult = await pool.query('SELECT * FROM body_marks WHERE person_id = $1 ORDER BY id', [id]);
+        sectionData = sectionDataResult.rows;
+        tableName = 'body_marks';
+        break;
+      case 'usedDevices':
+        sectionDataResult = await pool.query('SELECT * FROM used_devices WHERE person_id = $1 ORDER BY id', [id]);
+        sectionData = sectionDataResult.rows;
+        tableName = 'used_devices';
+        break;
+      case 'callHistory':
+        sectionDataResult = await pool.query('SELECT * FROM call_history WHERE person_id = $1 ORDER BY id', [id]);
+        sectionData = sectionDataResult.rows;
+        tableName = 'call_history';
+        break;
+      case 'weapons':
+        sectionDataResult = await pool.query('SELECT * FROM used_weapons WHERE person_id = $1 ORDER BY id', [id]);
+        sectionData = sectionDataResult.rows;
+        tableName = 'used_weapons';
+        break;
+      default:
+        return res.status(400).json({ error: 'Unsupported section for individual record deletion' });
+    }
+    
+    const index = parseInt(recordIndex);
+    if (index < 0 || index >= sectionData.length) {
+      return res.status(400).json({ error: 'Invalid record index' });
+    }
+    
+    const recordToDelete = sectionData[index];
+    console.log(`🗑️ Record to delete:`, recordToDelete);
+    
+    // Store the deleted record in deleted_sections table
+    await pool.query(
+      `INSERT INTO deleted_sections (person_id, section_name, detailed_data, record_type, record_index, deletion_reason, is_deleted)
+       VALUES ($1, $2, $3, $4, $5, $6, true)`,
+      [id, sectionName, JSON.stringify(recordToDelete), 'individual_record', index, deletionReason || '']
+    );
+    
+    // Delete the actual record from the main table
+    await pool.query(`DELETE FROM ${tableName} WHERE id = $1`, [recordToDelete.id]);
+    
+    console.log(`✅ Individual record deleted and stored in deleted_sections`);
+    res.json({ message: 'Record deleted successfully', deletedRecord: recordToDelete });
+    
+  } catch (err) {
+    console.error('Failed to delete individual record:', err);
+    res.status(500).json({ error: 'Failed to delete individual record' });
+  }
+});
+
+// Get deleted records for a specific section
+app.get('/api/person/:id/section/:sectionName/deleted-records', checkDbConnection, async (req, res) => {
+  try {
+    const { id, sectionName } = req.params;
+    
+    const result = await pool.query(
+      `SELECT detailed_data, record_type, record_index, deletion_reason, deleted_at
+       FROM deleted_sections 
+       WHERE person_id = $1 AND section_name = $2 AND is_deleted = true
+       ORDER BY record_index`,
+      [id, sectionName]
+    );
+    
+    console.log(`📍 Retrieved ${result.rows.length} deleted records for ${sectionName} section, person ${id}`);
+    
+    const deletedRecords = result.rows.map(row => ({
+      data: row.detailed_data,
+      recordType: row.record_type,
+      recordIndex: row.record_index,
+      deletionReason: row.deletion_reason,
+      deletedAt: row.deleted_at
+    }));
+    
+    res.json(deletedRecords);
+  } catch (err) {
+    console.error('Failed to get deleted records for section:', err);
+    res.status(500).json({ error: 'Failed to get deleted records for section' });
+  }
+});
+
+// Restore individual deleted record
+app.post('/api/person/:id/section/:sectionName/restore/:recordIndex', checkDbConnection, async (req, res) => {
+  try {
+    const { id, sectionName, recordIndex } = req.params;
+    
+    console.log(`🔄 Restoring record from ${sectionName} section, person ${id}, index ${recordIndex}`);
+    
+    // Get the deleted record
+    const deletedResult = await pool.query(
+      `SELECT detailed_data FROM deleted_sections 
+       WHERE person_id = $1 AND section_name = $2 AND record_index = $3 AND is_deleted = true`,
+      [id, sectionName, recordIndex]
+    );
+    
+    if (deletedResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deleted record not found' });
+    }
+    
+    const recordData = deletedResult.rows[0].detailed_data;
+    console.log(`🔄 Record data to restore:`, recordData);
+    
+    // Restore based on section type
+    let tableName = '';
+    let insertQuery = '';
+    let values = [];
+    
+    switch (sectionName) {
+      case 'address':
+        tableName = 'addresses';
+        insertQuery = `INSERT INTO addresses (person_id, number, street1, street2, town, district, province, police_area, police_division, from_date, end_date, is_currently_active)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`;
+        values = [id, recordData.number, recordData.street1, recordData.street2, recordData.town, recordData.district, recordData.province, recordData.police_area, recordData.police_division, recordData.from_date, recordData.end_date, recordData.is_currently_active];
+        break;
+      case 'family':
+        tableName = 'family_members';
+        insertQuery = `INSERT INTO family_members (person_id, relation, custom_relation, first_name, last_name, age, nic, phone_number)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`;
+        values = [id, recordData.relation, recordData.custom_relation, recordData.first_name, recordData.last_name, recordData.age, recordData.nic, recordData.phone_number];
+        break;
+      // Add other section restore logic as needed
+      default:
+        return res.status(400).json({ error: 'Restore not yet implemented for this section type' });
+    }
+    
+    // Insert the record back
+    await pool.query(insertQuery, values);
+    
+    // Mark as restored in deleted_sections
+    await pool.query(
+      `UPDATE deleted_sections SET is_deleted = false 
+       WHERE person_id = $1 AND section_name = $2 AND record_index = $3`,
+      [id, sectionName, recordIndex]
+    );
+    
+    console.log(`✅ Record restored successfully`);
+    res.json({ message: 'Record restored successfully' });
+    
+  } catch (err) {
+    console.error('Failed to restore record:', err);
+    res.status(500).json({ error: 'Failed to restore record' });
+  }
+});
+
+app.get('/api/person/:id/deleted-sections', checkDbConnection, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await pool.query(
+      `SELECT section_name, deleted_at, deleted_data, 
+              detailed_data, record_type, record_index, deletion_reason 
+       FROM deleted_sections 
+       WHERE person_id = $1 AND is_deleted = true
+       ORDER BY section_name, record_index`,
+      [id]
+    );
+    
+    console.log(`📍 Retrieved deleted sections for person ${id}:`, result.rows);
+    
+    const deletedSections = result.rows.map(row => ({
+      sectionName: row.section_name,
+      deletedAt: row.deleted_at,
+      deletedData: row.deleted_data,
+      detailedData: row.detailed_data,
+      recordType: row.record_type,
+      recordIndex: row.record_index,
+      deletionReason: row.deletion_reason
+    }));
+    
+    console.log(`📍 Formatted deleted sections:`, deletedSections);
+    res.json(deletedSections);
+  } catch (err) {
+    console.error('Failed to get deleted sections:', err);
+    res.status(500).json({ error: 'Failed to get deleted sections' });
+  }
+});
+
+// Start server with simple error handling
 const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`🚀 Server running on http://127.0.0.1:${PORT}`);
   console.log(`🚀 Also available at http://localhost:${PORT}`);
 });
 
-// Add server error handling
 server.on('error', (err) => {
   console.error('❌ Server error:', err);
   if (err.code === 'EADDRINUSE') {
-    console.log(`Port ${PORT} is in use. Trying port ${PORT + 1}...`);
-    server.listen(PORT + 1, '127.0.0.1');
+    console.log(`❌ Port ${PORT} is already in use. Please stop the existing server or change the port.`);
+    process.exit(1);
   }
 });
 
 server.on('connection', (socket) => {
-  console.log('🔌 New connection established');
   socket.on('error', (err) => {
     console.error('Socket error:', err);
   });
