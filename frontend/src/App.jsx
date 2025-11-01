@@ -35,12 +35,20 @@ export default function App() {
     try {
       console.log('🔄 Loading API connections...');
       const response = await axios.get(`${API_URL}/connections`);
-      setApiConnections(response.data);
+      console.log('📋 Raw response data:', response.data);
       console.log(`📋 Loaded ${response.data.length} API connections`);
-      console.log('📋 Connection data:', response.data);
+      
+      // Validate data structure
+      if (response.data.length > 0) {
+        console.log('📋 First connection sample:', JSON.stringify(response.data[0], null, 2));
+      }
+      
+      setApiConnections(response.data);
+      console.log('✅ API connections state updated successfully');
     } catch (error) {
       console.error('❌ Failed to load API connections:', error);
       console.error('❌ API URL:', `${API_URL}/connections`);
+      console.error('❌ Error details:', error.response?.data);
     }
   }, []);
 
@@ -3221,7 +3229,9 @@ export default function App() {
               </div>
 
               {/* Table Rows */}
-              {apiConnections.map((connection, index) => (
+              {apiConnections.map((connection, index) => {
+                try {
+                  return (
                 <div
                   key={connection.id}
                   style={{
@@ -3236,13 +3246,13 @@ export default function App() {
                   }}
                 >
                   <div style={{ fontFamily: 'monospace' }}>
-                    {connection.matchedPerson.nic || 'N/A'}
+                    {connection.matchedPerson?.nic || 'N/A'}
                   </div>
                   <div style={{ fontFamily: 'monospace' }}>
-                    {connection.matchedPerson.passport || 'N/A'}
+                    {connection.matchedPerson?.passport || 'N/A'}
                   </div>
                   <div style={{ fontWeight: '500' }}>
-                    {connection.matchedPerson.fullName}
+                    {connection.matchedPerson?.fullName || 'Unknown'}
                   </div>
                   <div style={{
                     padding: '4px 8px',
@@ -3252,7 +3262,7 @@ export default function App() {
                     fontSize: '11px',
                     textAlign: 'center'
                   }}>
-                    {connection.sourceSection}
+                    {connection.sourceSection || 'N/A'}
                   </div>
                   <div>
                     {connection.targetSections && connection.targetSections.length > 0 ? (
@@ -3300,7 +3310,16 @@ export default function App() {
                     </span>
                   </div>
                 </div>
-              ))}
+                  );
+                } catch (err) {
+                  console.error('Error rendering connection:', err, connection);
+                  return (
+                    <div key={index} style={{ padding: '15px', color: 'red' }}>
+                      Error displaying connection {index + 1}: {err.message}
+                    </div>
+                  );
+                }
+              })}
             </div>
           )}
         </div>
