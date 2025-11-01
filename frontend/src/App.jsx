@@ -22,6 +22,35 @@ export default function App() {
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [deletedSections, setDeletedSections] = useState(new Set());
+  
+  // Person Verification States
+  const [showDuplicateAlert, setShowDuplicateAlert] = useState(false);
+  const [duplicatePersonData, setDuplicatePersonData] = useState(null);
+  const [apiConnections, setApiConnections] = useState([]);
+  const [isVerifyingPerson, setIsVerifyingPerson] = useState(false);
+  const [pendingConnections, setPendingConnections] = useState([]); // Store connections to log after save
+  
+  // Load API connections function with useCallback to prevent infinite loops
+  const loadConnections = React.useCallback(async () => {
+    try {
+      console.log('🔄 Loading API connections...');
+      const response = await axios.get(`${API_URL}/connections`);
+      setApiConnections(response.data);
+      console.log(`📋 Loaded ${response.data.length} API connections`);
+      console.log('📋 Connection data:', response.data);
+    } catch (error) {
+      console.error('❌ Failed to load API connections:', error);
+      console.error('❌ API URL:', `${API_URL}/connections`);
+    }
+  }, []);
+
+  // Load API connections when page changes to api-connection
+  React.useEffect(() => {
+    if (currentPage === 'api-connection') {
+      loadConnections();
+    }
+  }, [currentPage, loadConnections]);
+  
   const [formData, setFormData] = useState({
     personal: { 
       firstName: '', 
@@ -438,6 +467,103 @@ export default function App() {
   const goToHomePage = () => {
     setCurrentPage('home');
     setAppMode('view');
+  };
+
+  // Person Verification Function
+  const verifyPersonExists = async (nic, passport, sourceSection = 'Unknown') => {
+    if (!nic && !passport) {
+      return { exists: false };
+    }
+    
+    setIsVerifyingPerson(true);
+    
+    try {
+      console.log(`🔍 Verifying person: NIC=${nic}, Passport=${passport}, Section=${sourceSection}`);
+      
+      const response = await axios.post(`${API_URL}/person/check`, {
+        nic: nic?.trim(),
+        passport: passport?.trim()
+      });
+      
+      if (response.data.exists) {
+        console.log(`⚠️ Duplicate found:`, response.data);
+        
+        // Show alert to user
+        setDuplicatePersonData({
+          ...response.data,
+          sourceSection
+        });
+        setShowDuplicateAlert(true);
+        
+        // Store connection data to log AFTER form is saved (not now)
+        const connectionData = {
+          personId: selectedPerson, // Current person being edited or null for new person
+          matchedPersonId: response.data.person.id,
+          matchType: 'duplicate_entry',
+          sourceSection: sourceSection,
+          targetSections: response.data.sections.map(s => s.section),
+          matchDetails: {
+            matchedBy: nic ? 'NIC' : 'Passport',
+            matchValue: nic || passport,
+            sectionsFound: response.data.sections
+          }
+        };
+        
+        console.log('� Storing pending connection (will log after save):', connectionData);
+        
+        // Add to pending connections array
+        setPendingConnections(prev => [...prev, connectionData]);
+      }
+      
+      return response.data;
+      
+    } catch (error) {
+      console.error('Person verification error:', error);
+      return { exists: false, error: error.message };
+    } finally {
+      setIsVerifyingPerson(false);
+    }
+  };
+
+  // Close duplicate alert
+  const closeDuplicateAlert = () => {
+    setShowDuplicateAlert(false);
+    setDuplicatePersonData(null);
+  };
+
+  // Log all pending connections after save
+  const logPendingConnections = async (personId) => {
+    if (pendingConnections.length === 0) {
+      console.log('📭 No pending connections to log');
+      return;
+    }
+
+    console.log(`📝 Logging ${pendingConnections.length} pending connections for person ID: ${personId}`);
+    
+    for (const connection of pendingConnections) {
+      try {
+        // Update personId with the actual saved person ID
+        const logData = {
+          ...connection,
+          personId: personId
+        };
+        
+        console.log('📝 Logging connection:', logData);
+        
+        const logResponse = await axios.post(`${API_URL}/connections/log`, logData);
+        
+        console.log('✅ API connection logged successfully:', logResponse.data);
+      } catch (logError) {
+        console.error('❌ Failed to log API connection:', logError);
+        console.error('❌ Error response:', logError.response?.data);
+      }
+    }
+    
+    // Clear pending connections after logging
+    setPendingConnections([]);
+    
+    // Refresh API connections
+    await loadConnections();
   };
 
   // Social media handlers
@@ -1060,6 +1186,9 @@ export default function App() {
       const response = await axios.put(`${API_URL}/person/${selectedPerson}`, updateData);
       console.log('Update response:', response.data);
       
+      // Log any pending API connections after successful save
+      await logPendingConnections(selectedPerson);
+      
       // Instead of clearing form data completely, just reload from database
       // This preserves any runtime-calculated fields like contact information
       console.log('🔄 Reloading person after update...');
@@ -1085,6 +1214,23 @@ export default function App() {
 
   const handleCreate = async () => {
     try {
+      // 🔍 STEP 1: Person Verification
+      console.log('🔍 Verifying person before creation...');
+      const verificationResult = await verifyPersonExists(
+        formData.personal.nic,
+        formData.personal.passport,
+        'Enter Data - Main Form'
+      );
+      
+      if (verificationResult.exists) {
+        // Person already exists - alert shown by verifyPersonExists
+        console.log('⚠️ Person verification failed - duplicate found');
+        // User can choose to continue or cancel from the alert
+      }
+      
+      // 🔄 STEP 2: Proceed with creation (user decided to continue)
+      console.log('✅ Proceeding with person creation...');
+      
       // Transform phones data back to second_phone format for backend compatibility
       const secondPhone = {
         whatsapp: '',
@@ -1121,6 +1267,10 @@ export default function App() {
       delete createData.phones; // Remove the phones field since backend expects secondPhone
 
       const response = await axios.post(`${API_URL}/person`, createData);
+      
+      // 📝 Log any pending API connections after successful creation
+      await logPendingConnections(response.data.id);
+      
       alert('Created successfully');
       setSelectedPerson(response.data.id);
       setIsEditing(false);
@@ -1307,12 +1457,12 @@ export default function App() {
   };
 
   // Function to delete individual record
-  const deleteIndividualRecord = async (sectionName, recordIndex, deletionReason = '') => {
+  const deleteIndividualRecord = async (sectionName, recordId, deletionReason = '') => {
     try {
-      console.log(`🗑️ Deleting individual record: ${sectionName}[${recordIndex}]`);
+      console.log(`🗑️ Deleting individual record: ${sectionName} with ID ${recordId}`);
       
       const response = await axios.delete(
-        `${API_URL}/person/${selectedPerson}/section/${sectionName}/record/${recordIndex}`,
+        `${API_URL}/person/${selectedPerson}/section/${sectionName}/record/${recordId}`,
         { data: { deletionReason } }
       );
       
@@ -1331,29 +1481,7 @@ export default function App() {
     }
   };
 
-  // Function to restore deleted record
-  const restoreDeletedRecord = async (sectionName, recordIndex) => {
-    try {
-      console.log(`🔄 Restoring deleted record: ${sectionName}[${recordIndex}]`);
-      
-      const response = await axios.post(
-        `${API_URL}/person/${selectedPerson}/section/${sectionName}/restore/${recordIndex}`
-      );
-      
-      console.log(`✅ Record restored:`, response.data);
-      
-      // Reload the person data to reflect changes
-      await loadPerson(selectedPerson);
-      
-      // Refresh deleted records for this section
-      await loadDeletedRecordsForSection(sectionName);
-      
-      alert('Record restored successfully!');
-    } catch (error) {
-      console.error(`Failed to restore record:`, error);
-      alert(`Failed to restore record: ${error.response?.data?.error || error.message}`);
-    }
-  };
+
 
   const loadDeletedSections = async (personId) => {
     try {
@@ -1419,9 +1547,9 @@ export default function App() {
           fontSize: '12px',
           fontWeight: 'bold'
         }}
-        title={`View ${deletedCount} deleted record${deletedCount !== 1 ? 's' : ''}`}
+        title={`View ${deletedCount} removed record${deletedCount !== 1 ? 's' : ''}`}
       >
-        🗑️ Deleted Records {deletedCount > 0 && `(${deletedCount})`}
+        🗑️ Removed Records {deletedCount > 0 && `(${deletedCount})`}
       </button>
     );
   };
@@ -1441,11 +1569,11 @@ export default function App() {
         borderRadius: '8px'
       }}>
         <h4 style={{ color: '#856404', marginBottom: '15px' }}>
-          🗑️ Deleted Records ({records.length})
+          🗑️ Removed Records ({records.length})
         </h4>
         
         {records.length === 0 ? (
-          <p style={{ color: '#856404', fontStyle: 'italic' }}>No deleted records found.</p>
+          <p style={{ color: '#856404', fontStyle: 'italic' }}>No removed records found.</p>
         ) : (
           records.map((record, index) => (
             <div key={index} style={{
@@ -1459,30 +1587,12 @@ export default function App() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
                   <strong>Record #{record.recordIndex + 1}</strong>
-                  {record.deletionReason && (
-                    <p style={{ color: '#666', fontSize: '12px', margin: '5px 0' }}>
-                      Reason: {record.deletionReason}
-                    </p>
-                  )}
+
                   <div style={{ fontSize: '14px', marginTop: '8px' }}>
                     {renderDeletedRecordData(sectionName, record.data)}
                   </div>
                 </div>
-                <button
-                  onClick={() => restoreDeletedRecord(sectionName, record.recordIndex)}
-                  style={{
-                    padding: '5px 10px',
-                    backgroundColor: '#28a745',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '3px',
-                    cursor: 'pointer',
-                    fontSize: '11px'
-                  }}
-                  title="Restore this record"
-                >
-                  🔄 Restore
-                </button>
+
               </div>
             </div>
           ))
@@ -1567,17 +1677,14 @@ export default function App() {
   };
 
   // Individual record delete button component
-  const DeleteRecordButton = ({ sectionName, recordIndex, disabled = false }) => {
+  const DeleteRecordButton = ({ sectionName, recordId, disabled = false }) => {
     // Hide delete buttons in search mode
     if (appMode === 'search') {
       return null;
     }
     
     const handleDelete = () => {
-      const reason = prompt("Enter reason for deletion (optional):");
-      if (reason !== null) { // User didn't cancel
-        deleteIndividualRecord(sectionName, recordIndex, reason);
-      }
+      deleteIndividualRecord(sectionName, recordId, '');
     };
     
     return (
@@ -1594,9 +1701,9 @@ export default function App() {
           fontSize: '11px',
           marginLeft: '5px'
         }}
-        title={disabled ? "Cannot delete" : "Delete this record"}
+        title={disabled ? "Cannot remove" : "Remove this record"}
       >
-        🗑️ Delete
+        🗑️ Remove
       </button>
     );
   };
@@ -2147,7 +2254,42 @@ export default function App() {
   // Function to create new person and add to dropdown
   const handleCreateNewPerson = async (personData, targetSection, targetIndex, targetField) => {
     try {
+      // 🔍 Verify person before creation
+      console.log('🔍 Verifying person before quick creation...');
+      const verificationResult = await verifyPersonExists(
+        personData.nic,
+        personData.passport,
+        `Enter Data - ${targetSection}`
+      );
+      
+      if (verificationResult.exists) {
+        console.log('⚠️ Person verification failed - duplicate found in quick creation');
+        // User can choose to continue from the alert
+      }
+      
       const response = await axios.post(`${API_URL}/person/quick`, personData);
+      
+      // 📝 Update connection record if duplicate was found but created anyway
+      if (verificationResult.exists && duplicatePersonData) {
+        try {
+          await axios.post(`${API_URL}/connections/log`, {
+            personId: response.data.id,
+            matchedPersonId: duplicatePersonData.person.id,
+            matchType: 'duplicate_entry',
+            sourceSection: `Enter Data - ${targetSection}`,
+            targetSections: duplicatePersonData.sections.map(s => s.section),
+            matchDetails: {
+              matchedBy: personData.nic ? 'NIC' : 'Passport',
+              matchValue: personData.nic || personData.passport,
+              sectionsFound: duplicatePersonData.sections,
+              createdAnyway: true,
+              quickCreation: true
+            }
+          });
+        } catch (logError) {
+          console.error('Failed to log quick creation connection:', logError);
+        }
+      }
       const newPerson = response.data;
       
       // Update the appropriate field with the new person's ID
@@ -2221,6 +2363,20 @@ export default function App() {
     
     // Only auto-fill when NIC or Passport is entered (not when Full Name is entered)
     if ((field === 'officialNic' || field === 'officialPassport') && value) {
+      // 🔍 First, verify person for duplicates
+      console.log(`🔍 Verifying person in Corrupted Officials section: ${field} = ${value}`);
+      const verificationResult = await verifyPersonExists(
+        field === 'officialNic' ? value : '',
+        field === 'officialPassport' ? value : '',
+        'Corrupted Officials'
+      );
+      
+      if (verificationResult.exists) {
+        console.log('⚠️ Duplicate person found in Corrupted Officials section');
+        // The duplicate alert will be shown by verifyPersonExists function
+      }
+      
+      // Then do auto-fill
       const personData = await searchPersonByIdentifier(value);
       if (personData) {
         updateCorruptedOfficial(index, 'officialName', personData.fullName);
@@ -2241,6 +2397,14 @@ export default function App() {
     
     // Only auto-fill when NIC is entered (not when Enemy Name is entered)
     if (field === 'enemyNic' && value) {
+      // 🔍 Verify person for duplicates
+      console.log(`🔍 Verifying person in Enemies section: ${field} = ${value}`);
+      const verificationResult = await verifyPersonExists(value, '', 'Enemies');
+      
+      if (verificationResult.exists) {
+        console.log('⚠️ Duplicate person found in Enemies section');
+      }
+      
       const personData = await searchPersonByIdentifier(value);
       if (personData) {
         updateEnemyIndividual(index, 'enemyName', personData.fullName);
@@ -2251,10 +2415,23 @@ export default function App() {
 
   // Auto-fill for Relatives Officials
   const handleRelativesOfficialAutoFill = async (index, field, value) => {
+    console.log(`🎯 handleRelativesOfficialAutoFill called: index=${index}, field=${field}, value=${value}`);
     updateRelativesOfficial(index, field, value);
     
     // Only auto-fill when NIC or Passport is entered (not when Full Name is entered)
     if ((field === 'nicNumber' || field === 'passportNumber') && value) {
+      // 🔍 Verify person for duplicates
+      console.log(`🔍 Verifying person in Relatives Officials section: ${field} = ${value}`);
+      const verificationResult = await verifyPersonExists(
+        field === 'nicNumber' ? value : '',
+        field === 'passportNumber' ? value : '',
+        'Relatives Officials'
+      );
+      
+      if (verificationResult.exists) {
+        console.log('⚠️ Duplicate person found in Relatives Officials section');
+      }
+      
       const personData = await searchPersonByIdentifier(value);
       if (personData) {
         updateRelativesOfficial(index, 'fullName', personData.fullName);
@@ -2464,247 +2641,262 @@ export default function App() {
   if (currentPage === 'home') {
     return (
       <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column',
-        justifyContent: 'flex-start', 
-        alignItems: 'center', 
-        height: '100vh', 
-        fontFamily: 'Arial, sans-serif',
-        background: '#1e3a8a', // Dark blue background
-        padding: '40px 20px',
-        overflow: 'auto'
+        minHeight: '100vh',
+        backgroundColor: '#ffffff',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
       }}>
-        {/* Header Section */}
+        {/* Header Section with Dark Blue Background */}
         <div style={{
-          backgroundColor: 'white',
-          borderRadius: '15px',
-          padding: '30px 40px',
-          boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
-          textAlign: 'center',
-          width: '100%',
-          maxWidth: '900px',
-          marginBottom: '40px'
+          background: '#1e3a8a',
+          color: 'white',
+          padding: '80px 20px',
+          textAlign: 'center'
         }}>
-          <h1 style={{ 
-            color: '#1e3a8a', 
-            fontSize: '36px', 
-            marginBottom: '10px',
-            fontWeight: 'bold'
+          <div style={{
+            maxWidth: '1200px',
+            margin: '0 auto'
           }}>
-            Criminal Data Management System
-          </h1>
-          <p style={{ 
-            color: '#64748b', 
-            fontSize: '16px', 
-            marginBottom: '0',
-            lineHeight: '1.6'
-          }}>
-            Comprehensive criminal data management with advanced analytics and reporting capabilities
-          </p>
+            <h1 style={{
+              fontSize: '3.5rem',
+              fontWeight: '700',
+              marginBottom: '20px',
+              letterSpacing: '-0.025em'
+            }}>
+              Criminal Management System
+            </h1>
+            <p style={{
+              fontSize: '1.25rem',
+              opacity: '0.9',
+              maxWidth: '600px',
+              margin: '0 auto',
+              lineHeight: '1.6'
+            }}>
+              Advanced digital platform for comprehensive criminal data management and analysis
+            </p>
+          </div>
         </div>
 
-        {/* Navigation Cards Grid */}
+        {/* Navigation Cards - 4x1 Grid */}
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, 1fr)',
-          gap: '25px',
-          width: '100%',
-          maxWidth: '900px',
-          marginBottom: '40px'
+          padding: '80px 20px',
+          maxWidth: '1200px',
+          margin: '0 auto'
         }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+            gap: '30px'
+          }}>
           {/* Enter Data Card */}
-          <div
-            onClick={() => navigateToPage('dashboard', 'enter')}
-            style={{
-              backgroundColor: 'white',
-              color: '#1e3a8a',
-              padding: '30px',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              transition: 'all 0.3s ease',
-              textAlign: 'center',
-              border: '2px solid #e2e8f0',
-              boxShadow: '0 4px 15px rgba(30, 58, 138, 0.1)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-5px)';
-              e.currentTarget.style.backgroundColor = '#1e3a8a';
-              e.currentTarget.style.color = 'white';
-              e.currentTarget.style.boxShadow = '0 8px 25px rgba(30, 58, 138, 0.25)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.backgroundColor = 'white';
-              e.currentTarget.style.color = '#1e3a8a';
-              e.currentTarget.style.boxShadow = '0 4px 15px rgba(30, 58, 138, 0.1)';
-            }}
-          >
-            <div style={{ fontSize: '40px', marginBottom: '15px' }}>📝</div>
-            <h3 style={{ fontSize: '20px', marginBottom: '10px', fontWeight: 'bold' }}>1. Enter Criminal Data</h3>
-            <p style={{ fontSize: '14px', lineHeight: '1.5', opacity: 0.8 }}>
-              Add new criminal records and personal details to the database
-            </p>
-          </div>
-
-          {/* Search Data Card */}
-          <div
-            onClick={() => navigateToPage('dashboard', 'search')}
-            style={{
-              backgroundColor: 'white',
-              color: '#1e3a8a',
-              padding: '30px',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              transition: 'all 0.3s ease',
-              textAlign: 'center',
-              border: '2px solid #e2e8f0',
-              boxShadow: '0 4px 15px rgba(30, 58, 138, 0.1)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-5px)';
-              e.currentTarget.style.backgroundColor = '#1e3a8a';
-              e.currentTarget.style.color = 'white';
-              e.currentTarget.style.boxShadow = '0 8px 25px rgba(30, 58, 138, 0.25)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.backgroundColor = 'white';
-              e.currentTarget.style.color = '#1e3a8a';
-              e.currentTarget.style.boxShadow = '0 4px 15px rgba(30, 58, 138, 0.1)';
-            }}
-          >
-            <div style={{ fontSize: '40px', marginBottom: '15px' }}>🔍</div>
-            <h3 style={{ fontSize: '20px', marginBottom: '10px', fontWeight: 'bold' }}>2. Search Criminal Data</h3>
-            <p style={{ fontSize: '14px', lineHeight: '1.5', opacity: 0.8 }}>
-              Search and view existing criminal records and details
-            </p>
-          </div>
-
-          {/* Analysis Card */}
-          <div
-            onClick={() => navigateToPage('dashboard', 'analysis')}
-            style={{
-              backgroundColor: 'white',
-              color: '#1e3a8a',
-              padding: '30px',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              transition: 'all 0.3s ease',
-              textAlign: 'center',
-              border: '2px solid #e2e8f0',
-              boxShadow: '0 4px 15px rgba(30, 58, 138, 0.1)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-5px)';
-              e.currentTarget.style.backgroundColor = '#1e3a8a';
-              e.currentTarget.style.color = 'white';
-              e.currentTarget.style.boxShadow = '0 8px 25px rgba(30, 58, 138, 0.25)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.backgroundColor = 'white';
-              e.currentTarget.style.color = '#1e3a8a';
-              e.currentTarget.style.boxShadow = '0 4px 15px rgba(30, 58, 138, 0.1)';
-            }}
-          >
-            <div style={{ fontSize: '40px', marginBottom: '15px' }}>📊</div>
-            <h3 style={{ fontSize: '20px', marginBottom: '10px', fontWeight: 'bold' }}>3. Analysis and Reporting</h3>
-            <p style={{ fontSize: '14px', lineHeight: '1.5', opacity: 0.8 }}>
-              Generate reports and analyze criminal data patterns
-            </p>
-          </div>
-
-          {/* API Connection Card */}
-          <div
-            onClick={() => navigateToPage('api-connection')}
-            style={{
-              backgroundColor: 'white',
-              color: '#1e3a8a',
-              padding: '30px',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              transition: 'all 0.3s ease',
-              textAlign: 'center',
-              border: '2px solid #e2e8f0',
-              boxShadow: '0 4px 15px rgba(30, 58, 138, 0.1)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-5px)';
-              e.currentTarget.style.backgroundColor = '#1e3a8a';
-              e.currentTarget.style.color = 'white';
-              e.currentTarget.style.boxShadow = '0 8px 25px rgba(30, 58, 138, 0.25)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.backgroundColor = 'white';
-              e.currentTarget.style.color = '#1e3a8a';
-              e.currentTarget.style.boxShadow = '0 4px 15px rgba(30, 58, 138, 0.1)';
-            }}
-          >
-            <div style={{ fontSize: '40px', marginBottom: '15px' }}>🔗</div>
-            <h3 style={{ fontSize: '20px', marginBottom: '10px', fontWeight: 'bold' }}>4. External API Connection</h3>
-            <p style={{ fontSize: '14px', lineHeight: '1.5', opacity: 0.8 }}>
-              Connect with external databases and API services
-            </p>
-          </div>
-          </div>
-        {/* Information Section */}
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '15px',
-          padding: '30px 40px',
-          boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
-          width: '100%',
-          maxWidth: '900px'
-        }}>
-          <h3 style={{ 
-            color: '#1e3a8a', 
-            marginBottom: '20px', 
-            textAlign: 'center',
-            fontSize: '22px',
-            fontWeight: 'bold'
-          }}>
-            How the System Works:
-          </h3>
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: '1fr',
-            gap: '15px',
-            color: '#64748b',
-            fontSize: '15px',
-            lineHeight: '1.6'
-          }}>
-            <div style={{ 
-              padding: '15px', 
-              backgroundColor: '#f8fafc', 
-              borderRadius: '8px',
-              borderLeft: '4px solid #1e3a8a'
-            }}>
-              <strong style={{ color: '#1e3a8a' }}>Enter Criminal Data:</strong> Access the full data entry interface for adding new criminal records.
+            <div
+              onClick={() => navigateToPage('dashboard', 'analysis')}
+              style={{
+                backgroundColor: 'white',
+                borderRadius: '20px',
+                padding: '40px 30px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-8px)';
+                e.currentTarget.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+              }}
+            >
+              <div style={{
+                width: '80px',
+                height: '80px',
+                backgroundColor: '#f3f4f6',
+                borderRadius: '16px',
+                margin: '0 auto 24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '36px'
+              }}>
+                📝
+              </div>
+              <h3 style={{
+                fontSize: '1.5rem',
+                fontWeight: '600',
+                color: '#1f2937',
+                marginBottom: '12px'
+              }}>
+                Enter Data
+              </h3>
+              <p style={{
+                color: '#6b7280',
+                fontSize: '1rem',
+                lineHeight: '1.5',
+                margin: 0
+              }}>
+                Add new criminal records and personal information to the database
+              </p>
             </div>
-            <div style={{ 
-              padding: '15px', 
-              backgroundColor: '#f8fafc', 
-              borderRadius: '8px',
-              borderLeft: '4px solid #1e3a8a'
-            }}>
-              <strong style={{ color: '#1e3a8a' }}>Search Criminal Data:</strong> Browse and view existing records in read-only mode without edit capabilities.
+
+            {/* Search Data Card */}
+            <div
+              onClick={() => navigateToPage('dashboard', 'search')}
+              style={{
+                backgroundColor: 'white',
+                borderRadius: '20px',
+                padding: '40px 30px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-8px)';
+                e.currentTarget.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+              }}
+            >
+              <div style={{
+                width: '80px',
+                height: '80px',
+                backgroundColor: '#f3f4f6',
+                borderRadius: '16px',
+                margin: '0 auto 24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '36px'
+              }}>
+                🔍
+              </div>
+              <h3 style={{
+                fontSize: '1.5rem',
+                fontWeight: '600',
+                color: '#1f2937',
+                marginBottom: '12px'
+              }}>
+                Search Data
+              </h3>
+              <p style={{
+                color: '#6b7280',
+                fontSize: '1rem',
+                lineHeight: '1.5',
+                margin: 0
+              }}>
+                Search and retrieve existing criminal records and information
+              </p>
             </div>
-            <div style={{ 
-              padding: '15px', 
-              backgroundColor: '#f8fafc', 
-              borderRadius: '8px',
-              borderLeft: '4px solid #1e3a8a'
-            }}>
-              <strong style={{ color: '#1e3a8a' }}>Analysis and Reporting:</strong> Full access to all data with comprehensive reporting tools.
+
+            {/* Analysis Card */}
+            <div
+              onClick={() => navigateToPage('dashboard', 'analysis')}
+              style={{
+                backgroundColor: 'white',
+                borderRadius: '20px',
+                padding: '40px 30px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-8px)';
+                e.currentTarget.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+              }}
+            >
+              <div style={{
+                width: '80px',
+                height: '80px',
+                backgroundColor: '#f3f4f6',
+                borderRadius: '16px',
+                margin: '0 auto 24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '36px'
+              }}>
+                📊
+              </div>
+              <h3 style={{
+                fontSize: '1.5rem',
+                fontWeight: '600',
+                color: '#1f2937',
+                marginBottom: '12px'
+              }}>
+                Analysis
+              </h3>
+              <p style={{
+                color: '#6b7280',
+                fontSize: '1rem',
+                lineHeight: '1.5',
+                margin: 0
+              }}>
+                Analyze trends and patterns in criminal data
+              </p>
             </div>
-            <div style={{ 
-              padding: '15px', 
-              backgroundColor: '#f8fafc', 
-              borderRadius: '8px',
-              borderLeft: '4px solid #1e3a8a'
-            }}>
-              <strong style={{ color: '#1e3a8a' }}>External API Connection:</strong> Integrate with external law enforcement databases.
+
+            {/* API Connection Card */}
+            <div
+              onClick={() => navigateToPage('api-connection')}
+              style={{
+                backgroundColor: 'white',
+                borderRadius: '20px',
+                padding: '40px 30px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-8px)';
+                e.currentTarget.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+              }}
+            >
+              <div style={{
+                width: '80px',
+                height: '80px',
+                backgroundColor: '#f3f4f6',
+                borderRadius: '16px',
+                margin: '0 auto 24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '36px'
+              }}>
+                🔗
+              </div>
+              <h3 style={{
+                fontSize: '1.5rem',
+                fontWeight: '600',
+                color: '#1f2937',
+                marginBottom: '12px'
+              }}>
+                API Connection
+              </h3>
+              <p style={{
+                color: '#6b7280',
+                fontSize: '1rem',
+                lineHeight: '1.5',
+                margin: 0
+              }}>
+                Connect to external databases and services
+              </p>
             </div>
           </div>
         </div>
@@ -2712,59 +2904,408 @@ export default function App() {
     );
   }
 
+  // Duplicate Person Alert Modal Component
+  const DuplicatePersonAlert = () => {
+    if (!showDuplicateAlert || !duplicatePersonData) return null;
+
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10000
+      }}>
+        <div style={{
+          backgroundColor: 'white',
+          borderRadius: '15px',
+          padding: '30px',
+          maxWidth: '600px',
+          width: '90%',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+          border: '3px solid #e74c3c'
+        }}>
+          {/* Header */}
+          <div style={{ textAlign: 'center', marginBottom: '25px' }}>
+            <div style={{ fontSize: '60px', marginBottom: '10px' }}>⚠️</div>
+            <h2 style={{ 
+              color: '#e74c3c', 
+              margin: 0, 
+              fontSize: '28px',
+              fontWeight: 'bold'
+            }}>
+              Person Already Exists!
+            </h2>
+          </div>
+
+          {/* Person Details */}
+          <div style={{
+            backgroundColor: '#fff5f5',
+            border: '1px solid #fed7d7',
+            borderRadius: '10px',
+            padding: '20px',
+            marginBottom: '20px'
+          }}>
+            <h3 style={{ color: '#c53030', marginTop: 0, marginBottom: '15px' }}>
+              Existing Person Details:
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '14px' }}>
+              <div><strong>Name:</strong> {duplicatePersonData.person.fullName}</div>
+              <div><strong>NIC:</strong> {duplicatePersonData.person.nic || 'N/A'}</div>
+              <div><strong>Passport:</strong> {duplicatePersonData.person.passport || 'N/A'}</div>
+              <div><strong>Source Section:</strong> {duplicatePersonData.sourceSection}</div>
+            </div>
+          </div>
+
+          {/* Existing Sections */}
+          {duplicatePersonData.sections && duplicatePersonData.sections.length > 0 && (
+            <div style={{
+              backgroundColor: '#f7fafc',
+              border: '1px solid #cbd5e0',
+              borderRadius: '10px',
+              padding: '20px',
+              marginBottom: '25px'
+            }}>
+              <h4 style={{ color: '#2d3748', marginTop: 0, marginBottom: '15px' }}>
+                Found in {duplicatePersonData.sections.length} section(s):
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '10px' }}>
+                {duplicatePersonData.sections.map((section, index) => (
+                  <div key={index} style={{
+                    backgroundColor: 'white',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '13px'
+                  }}>
+                    <div style={{ fontWeight: 'bold', color: '#4a5568' }}>{section.section}</div>
+                    <div style={{ color: '#718096' }}>{section.count} record(s)</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Warning Message */}
+          <div style={{
+            backgroundColor: '#fffaf0',
+            border: '1px solid #fbd38d',
+            borderRadius: '10px',
+            padding: '15px',
+            marginBottom: '25px'
+          }}>
+            <p style={{ 
+              margin: 0, 
+              color: '#c05621',
+              fontSize: '14px',
+              textAlign: 'center',
+              fontWeight: '500'
+            }}>
+              ℹ️ Your new entry will still be saved, but this person already exists in the system.
+            </p>
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            gap: '15px' 
+          }}>
+            <button
+              onClick={() => navigateToPage('api-connection')}
+              style={{
+                flex: 1,
+                padding: '12px 20px',
+                backgroundColor: '#3182ce',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#2c5282'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#3182ce'}
+            >
+              📊 View All Connections
+            </button>
+            <button
+              onClick={closeDuplicateAlert}
+              style={{
+                flex: 1,
+                padding: '12px 20px',
+                backgroundColor: '#e74c3c',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#c0392b'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#e74c3c'}
+            >
+              ✓ Continue Anyway
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Show API Connection Page
   if (currentPage === 'api-connection') {
     return (
       <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh', 
+        minHeight: '100vh', 
         fontFamily: 'Arial, sans-serif',
-        background: 'linear-gradient(135deg, #9b59b6, #8e44ad)'
+        background: 'linear-gradient(135deg, #f5f7fa, #c3cfe2)',
+        padding: '20px'
       }}>
+        {/* Header */}
         <div style={{
           backgroundColor: 'white',
-          borderRadius: '20px',
-          padding: '50px',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
-          textAlign: 'center',
-          maxWidth: '600px',
-          width: '90%'
+          borderRadius: '15px',
+          padding: '25px',
+          marginBottom: '25px',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
+          textAlign: 'center'
         }}>
-          <div style={{ fontSize: '80px', marginBottom: '20px' }}>🔗</div>
-          <h1 style={{ color: '#2c3e50', marginBottom: '20px' }}>External API Connection</h1>
-          <p style={{ color: '#7f8c8d', fontSize: '18px', marginBottom: '30px' }}>
-            This feature will allow integration with external law enforcement databases and API services.
+          <div style={{ fontSize: '50px', marginBottom: '15px' }}>🔗</div>
+          <h1 style={{ color: '#2c3e50', margin: 0, fontSize: '32px' }}>API Connection Dashboard</h1>
+          <p style={{ color: '#7f8c8d', fontSize: '16px', margin: '10px 0 0 0' }}>
+            Person Data Verification and Match Display System
           </p>
           <div style={{ 
-            padding: '20px', 
-            backgroundColor: '#f8f9fa', 
-            borderRadius: '10px', 
-            marginBottom: '30px',
-            border: '2px dashed #dee2e6'
+            display: 'flex', 
+            justifyContent: 'center', 
+            gap: '15px', 
+            marginTop: '20px' 
           }}>
-            <h3 style={{ color: '#6c757d' }}>Coming Soon</h3>
-            <p style={{ color: '#6c757d' }}>API integration functionality is under development</p>
+            <button
+              onClick={() => loadConnections()}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#3498db',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              🔄 Refresh
+            </button>
+            <button
+              onClick={goToHomePage}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#95a5a6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              ← Back to Home
+            </button>
           </div>
-          <button
-            onClick={goToHomePage}
-            style={{
-              background: 'linear-gradient(135deg, #3498db, #2980b9)',
-              color: 'white',
-              padding: '15px 30px',
-              border: 'none',
-              borderRadius: '10px',
-              fontSize: '16px',
-              cursor: 'pointer',
-              transition: 'transform 0.2s ease'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            ← Back to Home
-          </button>
         </div>
+
+        {/* Statistics */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '20px',
+          marginBottom: '25px'
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '20px',
+            textAlign: 'center',
+            boxShadow: '0 5px 15px rgba(0,0,0,0.08)'
+          }}>
+            <div style={{ fontSize: '24px', color: '#3498db', fontWeight: 'bold' }}>
+              {apiConnections.length}
+            </div>
+            <div style={{ color: '#7f8c8d', fontSize: '14px' }}>Total Connections</div>
+          </div>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '20px',
+            textAlign: 'center',
+            boxShadow: '0 5px 15px rgba(0,0,0,0.08)'
+          }}>
+            <div style={{ fontSize: '24px', color: '#e74c3c', fontWeight: 'bold' }}>
+              {apiConnections.filter(conn => !conn.resolved).length}
+            </div>
+            <div style={{ color: '#7f8c8d', fontSize: '14px' }}>Unresolved</div>
+          </div>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '20px',
+            textAlign: 'center',
+            boxShadow: '0 5px 15px rgba(0,0,0,0.08)'
+          }}>
+            <div style={{ fontSize: '24px', color: '#27ae60', fontWeight: 'bold' }}>
+              {apiConnections.filter(conn => conn.resolved).length}
+            </div>
+            <div style={{ color: '#7f8c8d', fontSize: '14px' }}>Resolved</div>
+          </div>
+        </div>
+
+        {/* Connections Table */}
+        <div style={{
+          backgroundColor: 'white',
+          borderRadius: '15px',
+          overflow: 'hidden',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.1)'
+        }}>
+          {/* Table Header */}
+          <div style={{
+            backgroundColor: '#34495e',
+            color: 'white',
+            padding: '20px',
+            fontSize: '18px',
+            fontWeight: 'bold'
+          }}>
+            📊 Person Match Records
+          </div>
+
+          {apiConnections.length === 0 ? (
+            /* Empty State */
+            <div style={{
+              padding: '60px 20px',
+              textAlign: 'center',
+              color: '#7f8c8d'
+            }}>
+              <div style={{ fontSize: '60px', marginBottom: '20px' }}>📭</div>
+              <h3>No API Connections Yet</h3>
+              <p>Person verification matches will appear here when duplicates are detected.</p>
+            </div>
+          ) : (
+            /* Table Content */
+            <div style={{ padding: '0' }}>
+              {/* Table Headers */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr 150px 200px 100px',
+                gap: '15px',
+                padding: '15px 20px',
+                backgroundColor: '#ecf0f1',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                color: '#2c3e50',
+                borderBottom: '1px solid #bdc3c7'
+              }}>
+                <div>NIC</div>
+                <div>Passport</div>
+                <div>Full Name</div>
+                <div>Source Section</div>
+                <div>Found In Sections</div>
+                <div>Status</div>
+              </div>
+
+              {/* Table Rows */}
+              {apiConnections.map((connection, index) => (
+                <div
+                  key={connection.id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr 1fr 150px 200px 100px',
+                    gap: '15px',
+                    padding: '15px 20px',
+                    borderBottom: index < apiConnections.length - 1 ? '1px solid #ecf0f1' : 'none',
+                    fontSize: '13px',
+                    alignItems: 'center',
+                    backgroundColor: connection.resolved ? '#f8f9fa' : 'white'
+                  }}
+                >
+                  <div style={{ fontFamily: 'monospace' }}>
+                    {connection.matchedPerson.nic || 'N/A'}
+                  </div>
+                  <div style={{ fontFamily: 'monospace' }}>
+                    {connection.matchedPerson.passport || 'N/A'}
+                  </div>
+                  <div style={{ fontWeight: '500' }}>
+                    {connection.matchedPerson.fullName}
+                  </div>
+                  <div style={{
+                    padding: '4px 8px',
+                    backgroundColor: '#3498db',
+                    color: 'white',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    textAlign: 'center'
+                  }}>
+                    {connection.sourceSection}
+                  </div>
+                  <div>
+                    {connection.targetSections && connection.targetSections.length > 0 ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {connection.targetSections.map((section, idx) => (
+                          <div key={idx} style={{
+                            padding: '3px 8px',
+                            backgroundColor: '#e8f4f8',
+                            color: '#2980b9',
+                            borderRadius: '10px',
+                            fontSize: '10px',
+                            fontWeight: '500'
+                          }}>
+                            {section}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '11px', color: '#7f8c8d', fontStyle: 'italic' }}>
+                        {connection.matchDetails?.sectionsFound && connection.matchDetails.sectionsFound.length > 0 ? (
+                          <div>
+                            {connection.matchDetails.sectionsFound.map((s, idx) => (
+                              <div key={idx} style={{ marginBottom: '2px' }}>
+                                • {s.section} ({s.count} record{s.count > 1 ? 's' : ''})
+                              </div>
+                            ))}
+                          </div>
+                        ) : connection.matchDetails?.matchedBy ? (
+                          `Matched by ${connection.matchDetails.matchedBy}: ${connection.matchDetails.matchValue || 'N/A'}`
+                        ) : (
+                          'Person in database only'
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <span style={{
+                      padding: '3px 8px',
+                      backgroundColor: connection.resolved ? '#27ae60' : '#e74c3c',
+                      color: 'white',
+                      borderRadius: '10px',
+                      fontSize: '10px'
+                    }}>
+                      {connection.resolved ? '✓ Resolved' : '⚠ New'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <DuplicatePersonAlert />
       </div>
     );
   }
@@ -3410,11 +3951,13 @@ export default function App() {
                         >
                           Remove
                         </button>
-                        <DeleteRecordButton 
-                          sectionName="address" 
-                          recordIndex={index} 
-                          disabled={isSectionDeleted('address')} 
-                        />
+                        {address.id && (
+                          <DeleteRecordButton 
+                            sectionName="address" 
+                            recordId={address.id} 
+                            disabled={isSectionDeleted('address')} 
+                          />
+                        )}
                       </div>
                     )}
                     
@@ -7101,6 +7644,9 @@ export default function App() {
           </div>
         )}
       </div>
+      
+      {/* Duplicate Person Alert Modal */}
+      <DuplicatePersonAlert />
     </div>
     );
   }

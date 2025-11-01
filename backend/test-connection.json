@@ -1,0 +1,11 @@
+{
+  "personId": null,
+  "matchedPersonId": 14,
+  "matchType": "duplicate_entry",
+  "sourceSection": "Relatives Officials",
+  "targetSections": ["Personal Details"],
+  "matchDetails": {
+    "matchedBy": "NIC",
+    "matchValue": "992801700V"
+  }
+}

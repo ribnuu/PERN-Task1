@@ -1882,6 +1882,219 @@ app.post('/api/person/quick', checkDbConnection, async (req, res) => {
   }
 });
 
+// 9. PERSON VERIFICATION - Check if person exists by NIC or Passport
+app.post('/api/person/check', checkDbConnection, async (req, res) => {
+  try {
+    const { nic, passport } = req.body;
+    
+    console.log(`🔍 Checking person existence - NIC: ${nic}, Passport: ${passport}`);
+    
+    if (!nic && !passport) {
+      return res.status(400).json({ error: 'Either NIC or Passport must be provided' });
+    }
+    
+    // Build query to check for existing person
+    let query = `SELECT p.id, p.first_name, p.last_name, p.full_name, p.nic, p.passport, p.created_at FROM people p WHERE `;
+    let queryParams = [];
+    let paramIndex = 1;
+    
+    if (nic && passport) {
+      query += `(p.nic = $${paramIndex} OR p.passport = $${paramIndex + 1})`;
+      queryParams.push(nic, passport);
+    } else if (nic) {
+      query += `p.nic = $${paramIndex}`;
+      queryParams.push(nic);
+    } else {
+      query += `p.passport = $${paramIndex}`;
+      queryParams.push(passport);
+    }
+    
+    const personResult = await pool.query(query, queryParams);
+    
+    if (personResult.rows.length === 0) {
+      console.log('✅ No existing person found');
+      return res.json({ exists: false });
+    }
+    
+    const existingPerson = personResult.rows[0];
+    console.log(`⚠️ Person already exists: ${existingPerson.full_name} (ID: ${existingPerson.id})`);
+    
+    // Find all sections where this person appears
+    const sections = [];
+    
+    // Check various tables for relationships
+    const checks = [
+      { table: 'addresses', section: 'Address Details' },
+      { table: 'family_members', section: 'Family & Friends' },
+      { table: 'vehicles', section: 'Vehicle Details' },
+      { table: 'body_marks', section: 'Body Marks' },
+      { table: 'used_devices', section: 'Used Devices' },
+      { table: 'call_history', section: 'Call History' },
+      { table: 'used_weapons', section: 'Used Weapons' },
+      { table: 'gang_details', section: 'Gang Details' },
+      { table: 'properties', section: 'Properties' },
+      { table: 'lawyers', section: 'Legal Representation' },
+      { table: 'court_cases', section: 'Court Cases' },
+      { table: 'enemies', section: 'Enemies' },
+      { table: 'corrupted_officials', section: 'Corrupted Officials' }
+    ];
+    
+    for (const check of checks) {
+      try {
+        const sectionResult = await pool.query(
+          `SELECT COUNT(*) as count FROM ${check.table} WHERE person_id = $1`,
+          [existingPerson.id]
+        );
+        
+        if (parseInt(sectionResult.rows[0].count) > 0) {
+          sections.push({
+            section: check.section,
+            table: check.table,
+            count: parseInt(sectionResult.rows[0].count)
+          });
+        }
+      } catch (err) {
+        // Table might not exist, skip silently
+        console.log(`Table ${check.table} not found, skipping...`);
+      }
+    }
+    
+    const response = {
+      exists: true,
+      person: {
+        id: existingPerson.id,
+        firstName: existingPerson.first_name,
+        lastName: existingPerson.last_name,
+        fullName: existingPerson.full_name,
+        nic: existingPerson.nic,
+        passport: existingPerson.passport,
+        createdAt: existingPerson.created_at
+      },
+      sections: sections,
+      message: `Person "${existingPerson.full_name}" already exists in the system`
+    };
+    
+    console.log(`📋 Person found in ${sections.length} sections:`, sections.map(s => s.section));
+    res.json(response);
+    
+  } catch (err) {
+    console.error('POST /api/person/check error:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+// 10. LOG API CONNECTION - Record a person match for tracking
+app.post('/api/connections/log', checkDbConnection, async (req, res) => {
+  try {
+    const { 
+      personId, 
+      matchedPersonId, 
+      matchType, 
+      sourceSection, 
+      targetSections, 
+      matchDetails 
+    } = req.body;
+    
+    console.log(`📝 Logging API connection: Person ${personId} matched with ${matchedPersonId} in ${sourceSection}`);
+    
+    const result = await pool.query(
+      `INSERT INTO api_connections 
+       (person_id, matched_person_id, match_type, source_section, target_sections, match_details) 
+       VALUES ($1, $2, $3, $4, $5, $6) 
+       RETURNING id, created_at`,
+      [
+        personId, 
+        matchedPersonId, 
+        matchType || 'duplicate_entry', 
+        sourceSection, 
+        targetSections || [], 
+        matchDetails || {}
+      ]
+    );
+    
+    res.json({ 
+      success: true, 
+      connectionId: result.rows[0].id,
+      createdAt: result.rows[0].created_at
+    });
+    
+  } catch (err) {
+    console.error('POST /api/connections/log error:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
+// 11. GET API CONNECTIONS - Retrieve all logged connections
+app.get('/api/connections', checkDbConnection, async (req, res) => {
+  try {
+    const { limit = 50, offset = 0, resolved = null } = req.query;
+    
+    let query = `
+      SELECT 
+        ac.id,
+        ac.match_type,
+        ac.source_section,
+        ac.target_sections,
+        ac.match_details,
+        ac.created_at,
+        ac.resolved,
+        ac.notes,
+        p1.id as person_id,
+        p1.full_name as person_name,
+        p1.nic as person_nic,
+        p1.passport as person_passport,
+        p2.id as matched_person_id,
+        p2.full_name as matched_person_name,
+        p2.nic as matched_person_nic,
+        p2.passport as matched_person_passport
+      FROM api_connections ac
+      JOIN people p1 ON ac.person_id = p1.id
+      JOIN people p2 ON ac.matched_person_id = p2.id
+    `;
+    
+    const queryParams = [];
+    if (resolved !== null) {
+      query += ` WHERE ac.resolved = $1`;
+      queryParams.push(resolved === 'true');
+    }
+    
+    query += ` ORDER BY ac.created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
+    queryParams.push(parseInt(limit), parseInt(offset));
+    
+    const result = await pool.query(query, queryParams);
+    
+    const connections = result.rows.map(row => ({
+      id: row.id,
+      matchType: row.match_type,
+      sourceSection: row.source_section,
+      targetSections: row.target_sections,
+      matchDetails: row.match_details,
+      createdAt: row.created_at,
+      resolved: row.resolved,
+      notes: row.notes,
+      person: {
+        id: row.person_id,
+        fullName: row.person_name,
+        nic: row.person_nic,
+        passport: row.person_passport
+      },
+      matchedPerson: {
+        id: row.matched_person_id,
+        fullName: row.matched_person_name,
+        nic: row.matched_person_nic,
+        passport: row.matched_person_passport
+      }
+    }));
+    
+    console.log(`📋 Retrieved ${connections.length} API connections`);
+    res.json(connections);
+    
+  } catch (err) {
+    console.error('GET /api/connections error:', err);
+    res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
 // Test route with database status
 app.get('/', (req, res) => {
   res.json({ 
@@ -2205,10 +2418,8 @@ app.delete('/api/person/:id/section/:sectionName', checkDbConnection, async (req
     // Insert or update deletion status in a separate table to track what was deleted
     console.log(`Storing deleted data for section "${sectionName}":`, JSON.stringify(deletedData, null, 2));
     await client.query(`
-      INSERT INTO deleted_sections (person_id, section_name, deleted_at, deleted_data) 
-      VALUES ($1, $2, CURRENT_TIMESTAMP, $3)
-      ON CONFLICT (person_id, section_name) 
-      DO UPDATE SET deleted_at = CURRENT_TIMESTAMP, is_deleted = true, deleted_data = $3
+      INSERT INTO deleted_sections (person_id, section_name, deleted_at, deleted_data, record_type) 
+      VALUES ($1, $2, CURRENT_TIMESTAMP, $3, 'whole_section')
     `, [id, sectionName.toLowerCase(), JSON.stringify(deletedData)]);
     
     await client.query('COMMIT');
@@ -2236,77 +2447,74 @@ app.delete('/api/person/:id/section/:sectionName', checkDbConnection, async (req
 
 // GET DELETED SECTIONS FOR A PERSON
 // Delete individual record from any section
-app.delete('/api/person/:id/section/:sectionName/record/:recordIndex', checkDbConnection, async (req, res) => {
+app.delete('/api/person/:id/section/:sectionName/record/:recordId', checkDbConnection, async (req, res) => {
   try {
-    const { id, sectionName, recordIndex } = req.params;
+    const { id, sectionName, recordId } = req.params;
     const { deletionReason } = req.body;
     
-    console.log(`🗑️ Deleting individual record from ${sectionName} section, person ${id}, index ${recordIndex}`);
+    console.log(`🗑️ Deleting individual record from ${sectionName} section, person ${id}, record ID ${recordId}`);
     
-    // First, get the current data for this section to extract the specific record
+    // First, verify the person exists
     const personResult = await pool.query('SELECT * FROM people WHERE id = $1', [id]);
     if (personResult.rows.length === 0) {
       return res.status(404).json({ error: 'Person not found' });
     }
     
-    // Get section data based on section name
-    let sectionData = [];
+    // Get the specific record directly by ID and person_id
+    let recordToDelete = null;
     let tableName = '';
-    let sectionDataResult;
     
     switch (sectionName) {
       case 'address':
-        sectionDataResult = await pool.query('SELECT * FROM addresses WHERE person_id = $1 ORDER BY id', [id]);
-        sectionData = sectionDataResult.rows;
         tableName = 'addresses';
+        const addressResult = await pool.query('SELECT * FROM addresses WHERE id = $1 AND person_id = $2', [recordId, id]);
+        recordToDelete = addressResult.rows[0];
         break;
       case 'family':
-        sectionDataResult = await pool.query('SELECT * FROM family_members WHERE person_id = $1 ORDER BY id', [id]);
-        sectionData = sectionDataResult.rows;
         tableName = 'family_members';
+        const familyResult = await pool.query('SELECT * FROM family_members WHERE id = $1 AND person_id = $2', [recordId, id]);
+        recordToDelete = familyResult.rows[0];
         break;
       case 'vehicles':
-        sectionDataResult = await pool.query('SELECT * FROM vehicles WHERE person_id = $1 ORDER BY id', [id]);
-        sectionData = sectionDataResult.rows;
         tableName = 'vehicles';
+        const vehicleResult = await pool.query('SELECT * FROM vehicles WHERE id = $1 AND person_id = $2', [recordId, id]);
+        recordToDelete = vehicleResult.rows[0];
         break;
       case 'bodyMarks':
-        sectionDataResult = await pool.query('SELECT * FROM body_marks WHERE person_id = $1 ORDER BY id', [id]);
-        sectionData = sectionDataResult.rows;
         tableName = 'body_marks';
+        const bodyMarkResult = await pool.query('SELECT * FROM body_marks WHERE id = $1 AND person_id = $2', [recordId, id]);
+        recordToDelete = bodyMarkResult.rows[0];
         break;
       case 'usedDevices':
-        sectionDataResult = await pool.query('SELECT * FROM used_devices WHERE person_id = $1 ORDER BY id', [id]);
-        sectionData = sectionDataResult.rows;
         tableName = 'used_devices';
+        const deviceResult = await pool.query('SELECT * FROM used_devices WHERE id = $1 AND person_id = $2', [recordId, id]);
+        recordToDelete = deviceResult.rows[0];
         break;
       case 'callHistory':
-        sectionDataResult = await pool.query('SELECT * FROM call_history WHERE person_id = $1 ORDER BY id', [id]);
-        sectionData = sectionDataResult.rows;
         tableName = 'call_history';
+        const callResult = await pool.query('SELECT * FROM call_history WHERE id = $1 AND person_id = $2', [recordId, id]);
+        recordToDelete = callResult.rows[0];
         break;
       case 'weapons':
-        sectionDataResult = await pool.query('SELECT * FROM used_weapons WHERE person_id = $1 ORDER BY id', [id]);
-        sectionData = sectionDataResult.rows;
         tableName = 'used_weapons';
+        const weaponResult = await pool.query('SELECT * FROM used_weapons WHERE id = $1 AND person_id = $2', [recordId, id]);
+        recordToDelete = weaponResult.rows[0];
         break;
       default:
         return res.status(400).json({ error: 'Unsupported section for individual record deletion' });
     }
     
-    const index = parseInt(recordIndex);
-    if (index < 0 || index >= sectionData.length) {
-      return res.status(400).json({ error: 'Invalid record index' });
+    if (!recordToDelete) {
+      return res.status(404).json({ error: 'Record not found' });
     }
     
-    const recordToDelete = sectionData[index];
     console.log(`🗑️ Record to delete:`, recordToDelete);
     
     // Store the deleted record in deleted_sections table
     await pool.query(
       `INSERT INTO deleted_sections (person_id, section_name, detailed_data, record_type, record_index, deletion_reason, is_deleted)
        VALUES ($1, $2, $3, $4, $5, $6, true)`,
-      [id, sectionName, JSON.stringify(recordToDelete), 'individual_record', index, deletionReason || '']
+      [id, sectionName, JSON.stringify(recordToDelete), 'individual_record', recordId, deletionReason || '']
     );
     
     // Delete the actual record from the main table
