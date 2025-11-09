@@ -781,14 +781,23 @@ export default function App() {
       
       // Get deleted sections data FIRST and use it consistently
       const deletedSectionsResponse = await axios.get(`${API_URL}/person/${id}/deleted-sections`);
-      const currentDeletedSections = new Set(deletedSectionsResponse.data.map(item => item.sectionName));
+      
+      // IMPORTANT: Only mark sections as deleted if they were deleted as a WHOLE SECTION
+      // Individual record deletions should NOT mark the entire section as deleted
+      const currentDeletedSections = new Set(
+        deletedSectionsResponse.data
+          .filter(item => item.recordType === 'whole_section')
+          .map(item => item.sectionName)
+      );
       
       // Store deleted data for each section
       console.log('📝 Deleted sections response in loadPerson:', deletedSectionsResponse.data);
+      console.log('📝 Sections marked as deleted (whole_section only):', Array.from(currentDeletedSections));
       const currentDeletedData = {};
       deletedSectionsResponse.data.forEach(item => {
         console.log(`📝 Processing deleted section: ${item.sectionName}`, item.deletedData);
-        if (item.deletedData) {
+        // Only store deleted data for whole section deletions
+        if (item.deletedData && item.recordType === 'whole_section') {
           currentDeletedData[item.sectionName] = item.deletedData;
         }
       });
@@ -855,7 +864,7 @@ export default function App() {
         family: (() => {
           // Check if family section is deleted and has deleted data
           if (currentDeletedSections.has('family') && currentDeletedData.family?.family) {
-            return currentDeletedData.family.family.map(f => ({
+            return currentDeletedData.family.family.map(f => ({              id: f.id,
               relation: f.relation || '',
               customRelation: f.custom_relation || '',
               firstName: f.first_name || '',
@@ -867,6 +876,7 @@ export default function App() {
           }
           // Otherwise use live data
           return data.family ? data.family.map(f => ({
+            id: f.id,
             relation: f.relation || '',
             customRelation: f.custom_relation || '',
             firstName: f.first_name || '',
@@ -877,17 +887,20 @@ export default function App() {
           })) : [];
         })(),
         vehicles: data.vehicles ? data.vehicles.map(v => ({
+          id: v.id,
           vehicleNumber: v.vehicle_number || '',
           make: v.make || '',
           model: v.model || ''
         })) : [],
         bodyMarks: data.bodyMarks ? data.bodyMarks.map(b => ({
+          id: b.id,
           type: b.type || '',
           location: b.location || '',
           description: b.description || '',
           picture: b.picture || ''
         })) : [],
         usedDevices: data.usedDevices ? data.usedDevices.map(d => ({
+          id: d.id,
           deviceType: d.device_type || '',
           make: d.make || '',
           model: d.model || '',
@@ -895,6 +908,7 @@ export default function App() {
           imeiNumber: d.imei_number || ''
         })) : [],
         callHistory: data.callHistory ? data.callHistory.map(c => ({
+          id: c.id,
           device: c.device || '',
           callType: c.call_type || '',
           number: c.number || '',
@@ -903,6 +917,7 @@ export default function App() {
           contactNic: ''   // Will be populated by populateAllCallHistoryContacts
         })) : [],
         weapons: data.weapons ? data.weapons.map(w => ({
+          id: w.id,
           manufacturer: w.manufacturer || '',
           model: w.model || '',
           caliber_marking: w.caliber_marking || '',
@@ -919,6 +934,7 @@ export default function App() {
         ] : [],
         properties: {
           currentlyInPossession: data.properties ? data.properties.filter(p => p.status === 'currently_in_possession').map(p => ({
+            id: p.id,
             propertyType: p.property_type || '',
             description: p.description || '',
             value: p.value ? String(p.value) : '',
@@ -931,6 +947,7 @@ export default function App() {
             saleDate: p.sale_date ? p.sale_date.split('T')[0] : ''
           })) : [],
           sold: data.properties ? data.properties.filter(p => p.status === 'sold').map(p => ({
+            id: p.id,
             propertyType: p.property_type || '',
             description: p.description || '',
             value: p.value ? String(p.value) : '',
@@ -944,6 +961,7 @@ export default function App() {
           })) : [],
           intendedToBuy: (() => {
             const intendedProps = data.properties ? data.properties.filter(p => p.status === 'intended_to_buy').map(p => ({
+              id: p.id,
               propertyType: p.property_type || '',
               description: p.description || '',
               value: p.value ? String(p.value) : '',
@@ -960,6 +978,7 @@ export default function App() {
           })()
         },
         gangDetails: data.gangDetails ? data.gangDetails.map(g => ({
+          id: g.id,
           gangName: g.gang_name || '',
           position: g.position_in_gang || '',
           fromDate: g.from_date ? g.from_date.split('T')[0] : '',
@@ -968,6 +987,7 @@ export default function App() {
         })) : [],
         enemies: {
           individuals: data.enemies && data.enemies.individuals ? data.enemies.individuals.map(e => ({
+            id: e.id,
             enemyPersonId: e.enemy_person_id || '',
             enemyName: e.enemy_name || '',
             enemyNic: e.enemy_nic || '',
@@ -976,12 +996,14 @@ export default function App() {
             notes: e.notes || ''
           })) : [],
           gangs: data.enemies && data.enemies.gangs ? data.enemies.gangs.map(g => ({
+            id: g.id,
             gangName: g.gang_name || '',
             threatLevel: g.threat_level || 'Low',
             notes: g.notes || ''
           })) : []
         },
         corruptedOfficials: data.corruptedOfficials ? data.corruptedOfficials.map(o => ({
+          id: o.id,
           officialPersonId: o.official_person_id || '',
           officialName: o.official_name || '',
           officialNic: o.official_nic || '',
@@ -992,6 +1014,7 @@ export default function App() {
         })) : [],
         socialMedia: data.socialMedia || [],
         occupations: data.occupations ? data.occupations.map(o => ({
+          id: o.id,
           jobTitle: o.jobTitle || '',
           company: o.company || '',
           fromDate: o.fromDate || '',
@@ -999,17 +1022,20 @@ export default function App() {
           currently: o.currently || false
         })) : [],
         lawyers: data.lawyers ? data.lawyers.map(l => ({
+          id: l.id,
           lawyerFullName: l.lawyer_full_name || '',
           lawFirmOrCompany: l.law_firm_or_company || '',
           phoneNumber: l.phone_number || '',
           caseNumber: l.case_number || ''
         })) : [],
         courtCases: data.courtCases ? data.courtCases.map(cc => ({
+          id: cc.id,
           caseNumber: cc.case_number || '',
           courts: cc.courts || '',
           description: cc.description || ''
         })) : [],
         activeAreas: data.activeAreas ? data.activeAreas.map(aa => ({
+          id: aa.id,
           town: aa.town || '',
           district: aa.district || '',
           province: aa.province || '',
@@ -1019,6 +1045,7 @@ export default function App() {
           addressSelection: aa.addressSelection || ''
         })) : [],
         relativesOfficials: data.relativesOfficials ? data.relativesOfficials.map(ro => ({
+          id: ro.id,
           fullName: ro.full_name || '',
           nicNumber: ro.nic_number || '',
           passportNumber: ro.passport_number || '',
@@ -1026,6 +1053,7 @@ export default function App() {
           description: ro.description || ''
         })) : [],
         bankDetails: data.bankDetails ? data.bankDetails.map(bd => ({
+          id: bd.id,
           accountType: bd.account_type || '',
           bankName: bd.bank_name || '',
           accountNumber: bd.account_number || '',
@@ -1064,9 +1092,28 @@ export default function App() {
         }));
       }
       
+      // Load deleted records for all sections that have deleted data
+      console.log('🔍 Loading deleted records for sections...');
+      const allSections = ['address', 'family', 'vehicles', 'bodyMarks', 'usedDevices', 'callHistory', 'weapons'];
+      for (const section of allSections) {
+        try {
+          const deletedRecordsResponse = await axios.get(`${API_URL}/person/${id}/section/${section}/deleted-records`);
+          if (deletedRecordsResponse.data && deletedRecordsResponse.data.length > 0) {
+            console.log(`📋 Loaded ${deletedRecordsResponse.data.length} deleted records for ${section}`);
+            setDeletedRecordsData(prev => ({
+              ...prev,
+              [section]: deletedRecordsResponse.data
+            }));
+          }
+        } catch (err) {
+          console.log(`⚠️ No deleted records for ${section} or error loading:`, err.message);
+        }
+      }
+      
       setIsEditing(false);
       setHasChanges(false);
-      setDeletedSections(new Set());
+      // DON'T clear deleted sections - they were just loaded!
+      // setDeletedSections(new Set()); // REMOVED - This was clearing the deleted sections!
       setSectionChanges({});
     } catch (error) {
       console.error('Load person error:', error);
@@ -1290,39 +1337,118 @@ export default function App() {
     }
   };
 
+  // Helper function to get user-friendly section names
+  const getSectionDisplayName = (sectionName) => {
+    const nameMap = {
+      'address': 'Address',
+      'addresses': 'Address',
+      'socialMedia': 'Social Media',
+      'occupations': 'Occupation',
+      'lawyers': 'Lawyers',
+      'courtCases': 'Court Cases',
+      'activeAreas': 'Active Areas',
+      'relativesOfficials': 'Relatives Officials',
+      'bankDetails': 'Bank Details',
+      'gang': 'Gang Details',
+      'family': 'Family & Friends',
+      'vehicles': 'Vehicle Details',
+      'bodyMarks': 'Body Marks',
+      'usedDevices': 'Used Devices',
+      'callHistory': 'Call History',
+      'weapons': 'Used Weapons',
+      'phones': 'Phone Details',
+      'properties': 'Properties',
+      'enemies': 'Enemies',
+      'corruptedOfficials': 'Corrupted Officials',
+      'bank': 'Bank Account'
+    };
+    return nameMap[sectionName] || sectionName.charAt(0).toUpperCase() + sectionName.slice(1);
+  };
+
   const handleGlobalDelete = async () => {
     if (!selectedPerson) return;
     
     // Get currently active section
     const currentSection = activeSection;
+    const sectionDisplayName = getSectionDisplayName(currentSection);
     
-    if (!confirm(`Are you sure you want to delete the "${currentSection}" section? All data in this section will be permanently deleted from the database.`)) return;
+    // Count current records to inform user
+    let recordCount = 0;
+    if (Array.isArray(formData[currentSection])) {
+      recordCount = formData[currentSection].length;
+    } else if (currentSection === 'properties') {
+      recordCount = (formData[currentSection]?.currentlyInPossession?.length || 0) + 
+                    (formData[currentSection]?.sold?.length || 0) + 
+                    (formData[currentSection]?.intendedToBuy?.length || 0);
+    } else if (currentSection === 'enemies') {
+      recordCount = (formData[currentSection]?.individuals?.length || 0) + 
+                    (formData[currentSection]?.gangs?.length || 0);
+    } else if (currentSection === 'phones') {
+      // Count non-empty phone fields
+      const phones = formData[currentSection] || {};
+      recordCount = Object.values(phones).filter(v => v && v.trim() !== '').length;
+    } else {
+      recordCount = 1; // For single record sections like bank
+    }
+    
+    if (!confirm(
+      `⚠️ Are you sure you want to delete the "${sectionDisplayName}" section?\n\n` +
+      `This will permanently delete ${recordCount} active record(s) from the database.\n` +
+      `All deleted records will be moved to "Deleted Records" for reference.\n\n` +
+      `This action cannot be undone.`
+    )) return;
 
     try {
+      console.log(`🗑️ Deleting section "${currentSection}" for person ${selectedPerson}`);
+      
       // Send delete request to backend for the specific section
       const response = await axios.delete(`${API_URL}/person/${selectedPerson}/section/${currentSection}`);
       
       if (response.data.success) {
-        // Mark section as deleted locally
-        setDeletedSections(prev => new Set([...prev, currentSection]));
+        console.log(`✅ Section "${currentSection}" deleted successfully`);
         
-        // Clear the section data from formData to show deleted state
-        setFormData(prev => ({
-          ...prev,
+        // Immediately clear the whole_section marker from the database
+        // This allows the section to be used for new entries right away
+        try {
+          await axios.delete(`${API_URL}/person/${selectedPerson}/section/${currentSection}/clear-deletion-marker`);
+          console.log(`🔓 Deletion marker cleared for section "${currentSection}"`);
+        } catch (clearError) {
+          console.warn(`⚠️ Failed to clear deletion marker, but continuing:`, clearError);
+        }
+        
+        // Remove the section from deletedSections Set to enable adding new records
+        setDeletedSections(prevDeleted => {
+          const newDeleted = new Set(prevDeleted);
+          newDeleted.delete(currentSection);
+          console.log(`🔓 Section "${currentSection}" removed from deletedSections - ready for new entries`);
+          return newDeleted;
+        });
+        
+        // Clear the form data for this section to show empty fields
+        setFormData(prevData => ({
+          ...prevData,
           [currentSection]: getEmptyDataForSection(currentSection)
         }));
         
-        alert(`"${currentSection}" section deleted successfully from database and is now showing as deleted.`);
-        trackChanges(); // Mark that changes were made
+        // Reload deleted records for this section to show the newly deleted data
+        await loadDeletedRecordsForSection(currentSection);
+        
+        // Show success message with details
+        alert(
+          `✅ Success!\n\n` +
+          `"${sectionDisplayName}" section deleted successfully.\n` +
+          `${recordCount} record(s) have been moved to Deleted Records.\n\n` +
+          `The section is now ready for new entries. You can view deleted records by clicking the "🗑️ Deleted Records" button.`
+        );
       } else {
         throw new Error('Delete operation failed');
       }
       
     } catch (error) {
-      console.error('Delete error:', error);
-      console.error('Error details:', error.response?.data);
+      console.error('❌ Delete error:', error);
+      console.error('❌ Error details:', error.response?.data);
       const message = error.response?.data?.error || error.response?.data?.details || error.message || 'Failed to delete section';
-      alert(`Failed to delete section: ${message}`);
+      alert(`❌ Failed to delete section: ${message}`);
     }
   };
 
@@ -1555,9 +1681,9 @@ export default function App() {
           fontSize: '12px',
           fontWeight: 'bold'
         }}
-        title={`View ${deletedCount} removed record${deletedCount !== 1 ? 's' : ''}`}
+        title={`View ${deletedCount} deleted record${deletedCount !== 1 ? 's' : ''}`}
       >
-        🗑️ Removed Records {deletedCount > 0 && `(${deletedCount})`}
+        🗑️ Deleted Records {deletedCount > 0 && `(${deletedCount})`}
       </button>
     );
   };
@@ -1566,7 +1692,66 @@ export default function App() {
   const DeletedRecordsView = ({ sectionName }) => {
     if (!showingDeletedRecords[sectionName]) return null;
     
-    const records = deletedRecordsData[sectionName] || [];
+    // Get individual deleted records (from individual_record deletions)
+    const individualRecords = deletedRecordsData[sectionName] || [];
+    
+    // Get whole section deleted records (from whole_section deletions)
+    let wholeSectionRecords = [];
+    const sectionData = deletedSectionsData[sectionName];
+    
+    // Extract records from the whole section deletion data structure
+    if (sectionData) {
+      // Handle different data structures for different sections
+      if (sectionName === 'address' && sectionData.addresses) {
+        wholeSectionRecords = sectionData.addresses.map(addr => ({
+          data: addr,
+          recordType: 'whole_section',
+          recordIndex: null
+        }));
+      } else if (sectionName === 'family' && sectionData.family) {
+        wholeSectionRecords = sectionData.family.map(fam => ({
+          data: fam,
+          recordType: 'whole_section',
+          recordIndex: null
+        }));
+      } else if (sectionName === 'vehicles' && sectionData.vehicles) {
+        wholeSectionRecords = sectionData.vehicles.map(veh => ({
+          data: veh,
+          recordType: 'whole_section',
+          recordIndex: null
+        }));
+      } else if (sectionName === 'bodyMarks' && sectionData.bodyMarks) {
+        wholeSectionRecords = sectionData.bodyMarks.map(mark => ({
+          data: mark,
+          recordType: 'whole_section',
+          recordIndex: null
+        }));
+      } else if (sectionName === 'usedDevices' && sectionData.usedDevices) {
+        wholeSectionRecords = sectionData.usedDevices.map(dev => ({
+          data: dev,
+          recordType: 'whole_section',
+          recordIndex: null
+        }));
+      } else if (sectionName === 'callHistory' && sectionData.callHistory) {
+        wholeSectionRecords = sectionData.callHistory.map(call => ({
+          data: call,
+          recordType: 'whole_section',
+          recordIndex: null
+        }));
+      } else if (sectionName === 'weapons' && sectionData.weapons) {
+        wholeSectionRecords = sectionData.weapons.map(wpn => ({
+          data: wpn,
+          recordType: 'whole_section',
+          recordIndex: null
+        }));
+      }
+    }
+    
+    // Combine both sources of deleted records
+    const allDeletedRecords = [...individualRecords, ...wholeSectionRecords];
+    
+    // Filter out null/undefined records before rendering
+    const validRecords = allDeletedRecords.filter(record => record !== null && record !== undefined && record.data);
     
     return (
       <div style={{
@@ -1577,13 +1762,13 @@ export default function App() {
         borderRadius: '8px'
       }}>
         <h4 style={{ color: '#856404', marginBottom: '15px' }}>
-          🗑️ Removed Records ({records.length})
+          🗑️ Deleted Records ({validRecords.length})
         </h4>
         
-        {records.length === 0 ? (
-          <p style={{ color: '#856404', fontStyle: 'italic' }}>No removed records found.</p>
+        {validRecords.length === 0 ? (
+          <p style={{ color: '#856404', fontStyle: 'italic' }}>No deleted records found.</p>
         ) : (
-          records.map((record, index) => (
+          validRecords.map((record, index) => (
             <div key={index} style={{
               marginBottom: '15px',
               padding: '10px',
@@ -1594,7 +1779,19 @@ export default function App() {
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
-                  <strong>Record #{record.recordIndex + 1}</strong>
+                  <strong>Record #{index + 1}</strong>
+                  {record.recordType && (
+                    <span style={{ 
+                      marginLeft: '10px', 
+                      fontSize: '12px', 
+                      color: '#666',
+                      backgroundColor: '#f0f0f0',
+                      padding: '2px 8px',
+                      borderRadius: '3px'
+                    }}>
+                      {record.recordType === 'whole_section' ? 'Section Deletion' : 'Individual Deletion'}
+                    </span>
+                  )}
 
                   <div style={{ fontSize: '14px', marginTop: '8px' }}>
                     {renderDeletedRecordData(sectionName, record.data)}
@@ -1611,66 +1808,75 @@ export default function App() {
 
   // Function to render deleted record data based on section type
   const renderDeletedRecordData = (sectionName, data) => {
+    // Add null safety check
+    if (!data) {
+      console.warn("⚠️ Skipped rendering null deleted record for section:", sectionName);
+      return <p style={{ color: '#999', fontStyle: 'italic' }}>No data available</p>;
+    }
+    
+    // Helper function to safely get value with fallback
+    const safeValue = (value, fallback = 'N/A') => value ?? fallback;
+    
     switch (sectionName) {
       case 'address':
         return (
           <div>
-            <p><strong>Address:</strong> {data.number} {data.street1} {data.street2}</p>
-            <p><strong>Location:</strong> {data.town}, {data.district}, {data.province}</p>
-            <p><strong>Police Area:</strong> {data.police_area} - {data.police_division}</p>
-            <p><strong>Period:</strong> {data.from_date} to {data.end_date || 'Current'}</p>
+            <p><strong>Address:</strong> {safeValue(data.number)} {safeValue(data.street1)} {safeValue(data.street2)}</p>
+            <p><strong>Location:</strong> {safeValue(data.town)}, {safeValue(data.district)}, {safeValue(data.province)}</p>
+            <p><strong>Police Area:</strong> {safeValue(data.police_area)} - {safeValue(data.police_division)}</p>
+            <p><strong>Period:</strong> {safeValue(data.from_date)} to {data.end_date || 'Current'}</p>
           </div>
         );
       case 'family':
         return (
           <div>
-            <p><strong>Name:</strong> {data.first_name} {data.last_name}</p>
-            <p><strong>Relation:</strong> {data.relation} {data.custom_relation && `(${data.custom_relation})`}</p>
-            <p><strong>Age:</strong> {data.age}</p>
-            <p><strong>Contact:</strong> {data.phone_number}</p>
+            <p><strong>Name:</strong> {safeValue(data.first_name)} {safeValue(data.last_name)}</p>
+            <p><strong>Relation:</strong> {safeValue(data.relation)} {data.custom_relation && `(${data.custom_relation})`}</p>
+            <p><strong>Age:</strong> {safeValue(data.age)}</p>
+            <p><strong>Contact:</strong> {safeValue(data.phone_number)}</p>
           </div>
         );
       case 'vehicles':
         return (
           <div>
-            <p><strong>Vehicle:</strong> {data.vehicle_number}</p>
-            <p><strong>Make/Model:</strong> {data.make} {data.model}</p>
+            <p><strong>Vehicle:</strong> {safeValue(data.vehicle_number)}</p>
+            <p><strong>Make/Model:</strong> {safeValue(data.make)} {safeValue(data.model)}</p>
           </div>
         );
       case 'bodyMarks':
         return (
           <div>
-            <p><strong>Type:</strong> {data.type}</p>
-            <p><strong>Location:</strong> {data.location}</p>
-            <p><strong>Description:</strong> {data.description}</p>
+            <p><strong>Type:</strong> {safeValue(data.type)}</p>
+            <p><strong>Location:</strong> {safeValue(data.location)}</p>
+            <p><strong>Description:</strong> {safeValue(data.description)}</p>
           </div>
         );
       case 'usedDevices':
         return (
           <div>
-            <p><strong>Device:</strong> {data.device_type}</p>
-            <p><strong>Make/Model:</strong> {data.make} {data.model}</p>
-            <p><strong>Serial:</strong> {data.serial_number}</p>
-            <p><strong>IMEI:</strong> {data.imei_number}</p>
+            <p><strong>Device:</strong> {safeValue(data.device_type)}</p>
+            <p><strong>Make/Model:</strong> {safeValue(data.make)} {safeValue(data.model)}</p>
+            <p><strong>Serial:</strong> {safeValue(data.serial_number)}</p>
+            <p><strong>IMEI:</strong> {safeValue(data.imei_number)}</p>
           </div>
         );
       case 'callHistory':
         return (
           <div>
-            <p><strong>Device:</strong> {data.device}</p>
-            <p><strong>Call Type:</strong> {data.call_type}</p>
-            <p><strong>Number:</strong> {data.number}</p>
-            <p><strong>Date/Time:</strong> {new Date(data.date_time).toLocaleString()}</p>
+            <p><strong>Device:</strong> {safeValue(data.device)}</p>
+            <p><strong>Call Type:</strong> {safeValue(data.call_type)}</p>
+            <p><strong>Number:</strong> {safeValue(data.number)}</p>
+            <p><strong>Date/Time:</strong> {data.date_time ? new Date(data.date_time).toLocaleString() : 'N/A'}</p>
           </div>
         );
       case 'weapons':
         return (
           <div>
-            <p><strong>Manufacturer:</strong> {data.manufacturer}</p>
-            <p><strong>Model:</strong> {data.model}</p>
-            <p><strong>Caliber:</strong> {data.caliber_marking}</p>
-            <p><strong>Origin:</strong> {data.country_origin}</p>
-            <p><strong>Serial:</strong> {data.serial_number}</p>
+            <p><strong>Manufacturer:</strong> {safeValue(data.manufacturer)}</p>
+            <p><strong>Model:</strong> {safeValue(data.model)}</p>
+            <p><strong>Caliber:</strong> {safeValue(data.caliber_marking)}</p>
+            <p><strong>Origin:</strong> {safeValue(data.country_origin)}</p>
+            <p><strong>Serial:</strong> {safeValue(data.serial_number)}</p>
           </div>
         );
       default:
@@ -1709,9 +1915,9 @@ export default function App() {
           fontSize: '11px',
           marginLeft: '5px'
         }}
-        title={disabled ? "Cannot remove" : "Remove this record"}
+        title={disabled ? "Cannot delete" : "Delete this record"}
       >
-        🗑️ Remove
+        🗑️ Delete
       </button>
     );
   };
@@ -3549,7 +3755,7 @@ export default function App() {
                 <strong style={{ fontSize: '16px' }}>This Section Has Been Deleted</strong>
               </div>
               <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.4' }}>
-                All data in this section has been permanently removed from the database. 
+                All data in this section has been permanently deleted from the database. 
                 The fields below are displaying the deleted state and are not editable.
               </p>
             </div>
@@ -3760,17 +3966,20 @@ export default function App() {
                         </h4>
                         <button
                           onClick={() => removeGangDetail(index)}
+                          title="Remove this gang detail"
                           style={{
-                            padding: '8px 12px',
+                            padding: '6px 10px',
                             backgroundColor: '#dc3545',
                             color: 'white',
                             border: 'none',
-                            borderRadius: '5px',
+                            borderRadius: '4px',
                             cursor: 'pointer',
-                            fontSize: '12px'
+                            fontSize: '16px',
+                            fontWeight: 'bold',
+                            lineHeight: '1'
                           }}
                         >
-                          Remove
+                          ✕
                         </button>
                       </div>
 
@@ -3931,7 +4140,7 @@ export default function App() {
                     Address Section Deleted
                   </div>
                   <div style={{ fontSize: '14px' }}>
-                    All address records have been permanently removed from the database.
+                    All address records have been permanently deleted from the database.
                   </div>
                 </div>
               )}
@@ -3950,26 +4159,33 @@ export default function App() {
                     </h4>
                     {!isSectionDeleted('address') && (
                       <div style={{ display: 'flex', gap: '5px' }}>
-                        <button
-                          onClick={() => {
-                            setFormData({
-                              ...formData,
-                              addresses: formData.addresses.filter((_, i) => i !== index)
-                            });
-                            trackChanges('address');
-                          }}
-                          style={{
-                            padding: '8px 12px',
-                            backgroundColor: '#e74c3c',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                          }}
-                        >
-                          Remove
-                        </button>
+                        {/* Show X button only for new records (no id) */}
+                        {!address.id && (
+                          <button
+                            onClick={() => {
+                              setFormData({
+                                ...formData,
+                                addresses: formData.addresses.filter((_, i) => i !== index)
+                              });
+                              trackChanges('address');
+                            }}
+                            title="Remove this address"
+                            style={{
+                              padding: '6px 10px',
+                              backgroundColor: '#e74c3c',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '16px',
+                              fontWeight: 'bold',
+                              lineHeight: '1'
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                        {/* Show Delete button only for saved records (with id) */}
                         {address.id && (
                           <DeleteRecordButton 
                             sectionName="address" 
@@ -4240,20 +4456,36 @@ export default function App() {
                         `Person ${index + 1}`
                       }
                     </h4>
-                    <button
-                      onClick={() => removeFamilyMember(index)}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: '#e74c3c',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                    >
-                      Remove
-                    </button>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      {/* Show X button only for new records (no id) */}
+                      {!member.id && (
+                        <button
+                          onClick={() => removeFamilyMember(index)}
+                          title="Remove this person"
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: '#e74c3c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            fontWeight: 'bold',
+                            lineHeight: '1'
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                      {/* Show Delete button only for saved records (with id) */}
+                      {member.id && (
+                        <DeleteRecordButton 
+                          sectionName="family" 
+                          recordId={member.id} 
+                          disabled={isSectionDeleted('family')} 
+                        />
+                      )}
+                    </div>
                   </div>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
@@ -4469,20 +4701,36 @@ export default function App() {
                     <h4 style={{ margin: 0, color: '#2c3e50' }}>
                       {vehicle.vehicleNumber ? `Vehicle: ${vehicle.vehicleNumber}` : `Vehicle ${index + 1}`}
                     </h4>
-                    <button
-                      onClick={() => removeVehicle(index)}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: '#e74c3c',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                    >
-                      Remove
-                    </button>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      {/* Show X button only for new records (no id) */}
+                      {!vehicle.id && (
+                        <button
+                          onClick={() => removeVehicle(index)}
+                          title="Remove this vehicle"
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: '#e74c3c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            fontWeight: 'bold',
+                            lineHeight: '1'
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                      {/* Show Delete button only for saved records (with id) */}
+                      {vehicle.id && (
+                        <DeleteRecordButton 
+                          sectionName="vehicles" 
+                          recordId={vehicle.id} 
+                          disabled={isSectionDeleted('vehicles')} 
+                        />
+                      )}
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
@@ -4598,20 +4846,36 @@ export default function App() {
                     <h4 style={{ margin: 0, color: '#2c3e50' }}>
                       {mark.type ? `${mark.type}` : `Body Mark ${index + 1}`}
                     </h4>
-                    <button
-                      onClick={() => removeBodyMark(index)}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: '#e74c3c',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                    >
-                      Remove
-                    </button>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      {/* Show X button only for new records (no id) */}
+                      {!mark.id && (
+                        <button
+                          onClick={() => removeBodyMark(index)}
+                          title="Remove this body mark"
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: '#e74c3c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            fontWeight: 'bold',
+                            lineHeight: '1'
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                      {/* Show Delete button only for saved records (with id) */}
+                      {mark.id && (
+                        <DeleteRecordButton 
+                          sectionName="bodyMarks" 
+                          recordId={mark.id} 
+                          disabled={isSectionDeleted('bodyMarks')} 
+                        />
+                      )}
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
@@ -4781,20 +5045,36 @@ export default function App() {
                     <h4 style={{ margin: 0, color: '#2c3e50' }}>
                       {device.deviceType ? `${device.deviceType} - ${device.make || 'Device'}` : `Device ${index + 1}`}
                     </h4>
-                    <button
-                      onClick={() => removeUsedDevice(index)}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: '#e74c3c',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                    >
-                      Remove
-                    </button>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      {/* Show X button only for new records (no id) */}
+                      {!device.id && (
+                        <button
+                          onClick={() => removeUsedDevice(index)}
+                          title="Remove this device"
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: '#e74c3c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            fontWeight: 'bold',
+                            lineHeight: '1'
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                      {/* Show Delete button only for saved records (with id) */}
+                      {device.id && (
+                        <DeleteRecordButton 
+                          sectionName="usedDevices" 
+                          recordId={device.id} 
+                          disabled={isSectionDeleted('usedDevices')} 
+                        />
+                      )}
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
@@ -4976,20 +5256,36 @@ export default function App() {
                     <h4 style={{ margin: 0, color: '#2c3e50' }}>
                       {call.number ? getCallDisplayText(call) : `Call Record ${index + 1}`}
                     </h4>
-                    <button
-                      onClick={() => removeCallHistory(index)}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: '#e74c3c',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                    >
-                      Remove
-                    </button>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      {/* Show X button only for new records (no id) */}
+                      {!call.id && (
+                        <button
+                          onClick={() => removeCallHistory(index)}
+                          title="Remove this call record"
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: '#e74c3c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            fontWeight: 'bold',
+                            lineHeight: '1'
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                      {/* Show Delete button only for saved records (with id) */}
+                      {call.id && (
+                        <DeleteRecordButton 
+                          sectionName="callHistory" 
+                          recordId={call.id} 
+                          disabled={isSectionDeleted('callHistory')} 
+                        />
+                      )}
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
@@ -5185,20 +5481,36 @@ export default function App() {
                     <h4 style={{ margin: 0, color: '#2c3e50' }}>
                       {weapon.manufacturer ? `${weapon.manufacturer} ${weapon.model}` : `Weapon ${index + 1}`}
                     </h4>
-                    <button
-                      onClick={() => removeWeapon(index)}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: '#e74c3c',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                    >
-                      Remove
-                    </button>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      {/* Show X button only for new records (no id) */}
+                      {!weapon.id && (
+                        <button
+                          onClick={() => removeWeapon(index)}
+                          title="Remove this weapon"
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: '#e74c3c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            fontWeight: 'bold',
+                            lineHeight: '1'
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                      {/* Show Delete button only for saved records (with id) */}
+                      {weapon.id && (
+                        <DeleteRecordButton 
+                          sectionName="weapons" 
+                          recordId={weapon.id} 
+                          disabled={isSectionDeleted('weapons')} 
+                        />
+                      )}
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
@@ -5354,20 +5666,32 @@ export default function App() {
                     <h4 style={{ margin: 0, color: '#2c3e50' }}>
                       {phone.number ? `${phone.type === 'Other' && phone.customType ? phone.customType : phone.type}: ${phone.number}` : `Phone ${index + 1}`}
                     </h4>
-                    <button
-                      onClick={() => removePhone(index)}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: '#e74c3c',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                    >
-                      Remove
-                    </button>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      <button
+                        onClick={() => removePhone(index)}
+                        title="Remove this phone number"
+                        style={{
+                          padding: '6px 10px',
+                          backgroundColor: '#e74c3c',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '16px',
+                          fontWeight: 'bold',
+                          lineHeight: '1'
+                        }}
+                      >
+                        ✕
+                      </button>
+                      {phone.id && (
+                        <DeleteRecordButton 
+                          sectionName="phone" 
+                          recordId={phone.id} 
+                          disabled={isSectionDeleted('phone')} 
+                        />
+                      )}
+                    </div>
                   </div>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 1fr', gap: '15px', alignItems: 'end' }}>
@@ -5621,20 +5945,36 @@ export default function App() {
                         <h4 style={{ margin: 0, color: '#27ae60' }}>
                           {property.propertyType ? `${property.propertyType}` : `Property ${index + 1}`}
                         </h4>
-                        <button
-                          onClick={() => removeProperty('currentlyInPossession', index)}
-                          style={{
-                            padding: '8px 12px',
-                            backgroundColor: '#e74c3c',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                          }}
-                        >
-                          Remove
-                        </button>
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                          {/* Show X button only for new records (no id) */}
+                          {!property.id && (
+                            <button
+                              onClick={() => removeProperty('currentlyInPossession', index)}
+                              title="Remove this property"
+                              style={{
+                                padding: '6px 10px',
+                                backgroundColor: '#e74c3c',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '16px',
+                                fontWeight: 'bold',
+                                lineHeight: '1'
+                              }}
+                            >
+                              ✕
+                            </button>
+                          )}
+                          {/* Show Delete button only for saved records (with id) */}
+                          {property.id && (
+                            <DeleteRecordButton 
+                              sectionName="properties" 
+                              recordId={property.id} 
+                              disabled={isSectionDeleted('properties')} 
+                            />
+                          )}
+                        </div>
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
@@ -5885,20 +6225,36 @@ export default function App() {
                         <h4 style={{ margin: 0, color: '#e74c3c' }}>
                           {property.propertyType ? `${property.propertyType} (SOLD)` : `Sold Property ${index + 1}`}
                         </h4>
-                        <button
-                          onClick={() => removeProperty('sold', index)}
-                          style={{
-                            padding: '8px 12px',
-                            backgroundColor: '#e74c3c',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                          }}
-                        >
-                          Remove
-                        </button>
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                          {/* Show X button only for new records (no id) */}
+                          {!property.id && (
+                            <button
+                              onClick={() => removeProperty('sold', index)}
+                              title="Remove this sold property"
+                              style={{
+                                padding: '6px 10px',
+                                backgroundColor: '#e74c3c',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '16px',
+                                fontWeight: 'bold',
+                                lineHeight: '1'
+                              }}
+                            >
+                              ✕
+                            </button>
+                          )}
+                          {/* Show Delete button only for saved records (with id) */}
+                          {property.id && (
+                            <DeleteRecordButton 
+                              sectionName="properties" 
+                              recordId={property.id} 
+                              disabled={isSectionDeleted('properties')} 
+                            />
+                          )}
+                        </div>
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
@@ -6171,20 +6527,36 @@ export default function App() {
                         <h4 style={{ margin: 0, color: '#f39c12' }}>
                           {property.propertyType ? `${property.propertyType} (INTENDED)` : `Intended Property ${index + 1}`}
                         </h4>
-                        <button
-                          onClick={() => removeProperty('intendedToBuy', index)}
-                          style={{
-                            padding: '8px 12px',
-                            backgroundColor: '#e74c3c',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                          }}
-                        >
-                          Remove
-                        </button>
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                          {/* Show X button only for new records (no id) */}
+                          {!property.id && (
+                            <button
+                              onClick={() => removeProperty('intendedToBuy', index)}
+                              title="Remove this intended property"
+                              style={{
+                                padding: '6px 10px',
+                                backgroundColor: '#e74c3c',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '16px',
+                                fontWeight: 'bold',
+                                lineHeight: '1'
+                              }}
+                            >
+                              ✕
+                            </button>
+                          )}
+                          {/* Show Delete button only for saved records (with id) */}
+                          {property.id && (
+                            <DeleteRecordButton 
+                              sectionName="properties" 
+                              recordId={property.id} 
+                              disabled={isSectionDeleted('properties')} 
+                            />
+                          )}
+                        </div>
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
@@ -6493,20 +6865,36 @@ export default function App() {
                         <h4 style={{ margin: 0, color: '#e74c3c' }}>
                           Enemy Individual {index + 1}
                         </h4>
-                        <button
-                          onClick={() => removeEnemyIndividual(index)}
-                          style={{
-                            padding: '8px 12px',
-                            backgroundColor: '#dc3545',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                          }}
-                        >
-                          Remove
-                        </button>
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                          {/* Show X button only for new records (no id) */}
+                          {!enemy.id && (
+                            <button
+                              onClick={() => removeEnemyIndividual(index)}
+                              title="Remove this enemy individual"
+                              style={{
+                                padding: '6px 10px',
+                                backgroundColor: '#dc3545',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '16px',
+                                fontWeight: 'bold',
+                                lineHeight: '1'
+                              }}
+                            >
+                              ✕
+                            </button>
+                          )}
+                          {/* Show Delete button only for saved records (with id) */}
+                          {enemy.id && (
+                            <DeleteRecordButton 
+                              sectionName="enemies" 
+                              recordId={enemy.id} 
+                              disabled={isSectionDeleted('enemies')} 
+                            />
+                          )}
+                        </div>
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
@@ -6666,20 +7054,36 @@ export default function App() {
                         <h4 style={{ margin: 0, color: '#e74c3c' }}>
                           Enemy Gang {index + 1}
                         </h4>
-                        <button
-                          onClick={() => removeEnemyGang(index)}
-                          style={{
-                            padding: '8px 12px',
-                            backgroundColor: '#dc3545',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                          }}
-                        >
-                          Remove
-                        </button>
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                          {/* Show X button only for new records (no id) */}
+                          {!gang.id && (
+                            <button
+                              onClick={() => removeEnemyGang(index)}
+                              title="Remove this enemy gang"
+                              style={{
+                                padding: '6px 10px',
+                                backgroundColor: '#dc3545',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '16px',
+                                fontWeight: 'bold',
+                                lineHeight: '1'
+                              }}
+                            >
+                              ✕
+                            </button>
+                          )}
+                          {/* Show Delete button only for saved records (with id) */}
+                          {gang.id && (
+                            <DeleteRecordButton 
+                              sectionName="enemies" 
+                              recordId={gang.id} 
+                              disabled={isSectionDeleted('enemies')} 
+                            />
+                          )}
+                        </div>
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
@@ -6833,20 +7237,36 @@ export default function App() {
                     <h4 style={{ margin: 0, color: '#dc3545' }}>
                       Corrupted Official {index + 1}
                     </h4>
-                    <button
-                      onClick={() => removeCorruptedOfficial(index)}
-                      style={{
-                        padding: '8px 12px',
-                        backgroundColor: '#dc3545',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                    >
-                      Remove
-                    </button>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      {/* Show X button only for new records (no id) */}
+                      {!official.id && (
+                        <button
+                          onClick={() => removeCorruptedOfficial(index)}
+                          title="Remove this corrupted official"
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: '#dc3545',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            fontWeight: 'bold',
+                            lineHeight: '1'
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                      {/* Show Delete button only for saved records (with id) */}
+                      {official.id && (
+                        <DeleteRecordButton 
+                          sectionName="corruptedOfficials" 
+                          recordId={official.id} 
+                          disabled={isSectionDeleted('corruptedOfficials')} 
+                        />
+                      )}
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
@@ -7001,11 +7421,35 @@ export default function App() {
               )}
 
               {(formData.socialMedia||[]).map((s, index) => (
-                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#faf5ff', borderRadius: '8px', border: '1px solid #efe5ff' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <strong>Account {index+1}</strong>
-                    <button onClick={() => removeSocialMedia(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#faf5ff', borderRadius: '8px', border: '1px solid #efe5ff', position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px' }}>
+                    {/* Show X button only for new records (no id) */}
+                    {!s.id && (
+                      <button 
+                        onClick={() => removeSocialMedia(index)} 
+                        title="Remove this account"
+                        style={{ 
+                          padding: '4px 8px', 
+                          backgroundColor: '#e74c3c', 
+                          color: 'white', 
+                          border: 'none', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          lineHeight: '1'
+                        }}>✕</button>
+                    )}
+                    {/* Show Delete button only for saved records (with id) */}
+                    {s.id && (
+                      <DeleteRecordButton 
+                        sectionName="socialMedia" 
+                        recordId={s.id} 
+                        disabled={isSectionDeleted('socialMedia')} 
+                      />
+                    )}
                   </div>
+                  <strong style={{ display: 'block', marginBottom: '10px' }}>Account {index+1}</strong>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Platform</label>
@@ -7056,11 +7500,35 @@ export default function App() {
               )}
 
               {(formData.occupations||[]).map((o, index) => (
-                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f0fffa', borderRadius: '8px', border: '1px solid #e6ffef' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <strong>Occupation {index+1}</strong>
-                    <button onClick={() => removeOccupation(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f0fffa', borderRadius: '8px', border: '1px solid #e6ffef', position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px' }}>
+                    {/* Show X button only for new records (no id) */}
+                    {!o.id && (
+                      <button 
+                        onClick={() => removeOccupation(index)} 
+                        title="Remove this occupation"
+                        style={{ 
+                          padding: '4px 8px', 
+                          backgroundColor: '#e74c3c', 
+                          color: 'white', 
+                          border: 'none', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          lineHeight: '1'
+                        }}>✕</button>
+                    )}
+                    {/* Show Delete button only for saved records (with id) */}
+                    {o.id && (
+                      <DeleteRecordButton 
+                        sectionName="occupation" 
+                        recordId={o.id} 
+                        disabled={isSectionDeleted('occupation')} 
+                      />
+                    )}
                   </div>
+                  <strong style={{ display: 'block', marginBottom: '10px' }}>Occupation {index+1}</strong>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Job Title</label>
@@ -7106,11 +7574,35 @@ export default function App() {
               )}
 
               {(formData.lawyers||[]).map((lawyer, index) => (
-                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#fafafa', borderRadius: '8px', border: '1px solid #e1bee7' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <strong>Lawyer {index+1}</strong>
-                    <button onClick={() => removeLawyer(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#fafafa', borderRadius: '8px', border: '1px solid #e1bee7', position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px' }}>
+                    {/* Show X button only for new records (no id) */}
+                    {!lawyer.id && (
+                      <button 
+                        onClick={() => removeLawyer(index)} 
+                        title="Remove this lawyer"
+                        style={{ 
+                          padding: '4px 8px', 
+                          backgroundColor: '#e74c3c', 
+                          color: 'white', 
+                          border: 'none', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          lineHeight: '1'
+                        }}>✕</button>
+                    )}
+                    {/* Show Delete button only for saved records (with id) */}
+                    {lawyer.id && (
+                      <DeleteRecordButton 
+                        sectionName="lawyers" 
+                        recordId={lawyer.id} 
+                        disabled={isSectionDeleted('lawyers')} 
+                      />
+                    )}
                   </div>
+                  <strong style={{ display: 'block', marginBottom: '10px' }}>Lawyer {index+1}</strong>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Case Number <small style={{ color: '#666' }}>(From Court Cases)</small></label>
@@ -7162,11 +7654,35 @@ export default function App() {
               )}
 
               {(formData.courtCases||[]).map((courtCase, index) => (
-                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#fff3e0', borderRadius: '8px', border: '1px solid #ffcc02' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <strong>Court Case {index+1}</strong>
-                    <button onClick={() => removeCourtCase(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#fff3e0', borderRadius: '8px', border: '1px solid #ffcc02', position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px' }}>
+                    {/* Show X button only for new records (no id) */}
+                    {!courtCase.id && (
+                      <button 
+                        onClick={() => removeCourtCase(index)} 
+                        title="Remove this court case"
+                        style={{ 
+                          padding: '4px 8px', 
+                          backgroundColor: '#e74c3c', 
+                          color: 'white', 
+                          border: 'none', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          lineHeight: '1'
+                        }}>✕</button>
+                    )}
+                    {/* Show Delete button only for saved records (with id) */}
+                    {courtCase.id && (
+                      <DeleteRecordButton 
+                        sectionName="courtCases" 
+                        recordId={courtCase.id} 
+                        disabled={isSectionDeleted('courtCases')} 
+                      />
+                    )}
                   </div>
+                  <strong style={{ display: 'block', marginBottom: '10px' }}>Court Case {index+1}</strong>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Case Number</label>
@@ -7205,11 +7721,35 @@ export default function App() {
               )}
 
               {(formData.activeAreas||[]).map((activeArea, index) => (
-                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#e8f5e8', borderRadius: '8px', border: '1px solid #c8e6c9' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <strong>Active Area {index+1}</strong>
-                    <button onClick={() => removeActiveArea(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#e8f5e8', borderRadius: '8px', border: '1px solid #c8e6c9', position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px' }}>
+                    {/* Show X button only for new records (no id) */}
+                    {!activeArea.id && (
+                      <button 
+                        onClick={() => removeActiveArea(index)} 
+                        title="Remove this active area"
+                        style={{ 
+                          padding: '4px 8px', 
+                          backgroundColor: '#e74c3c', 
+                          color: 'white', 
+                          border: 'none', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          lineHeight: '1'
+                        }}>✕</button>
+                    )}
+                    {/* Show Delete button only for saved records (with id) */}
+                    {activeArea.id && (
+                      <DeleteRecordButton 
+                        sectionName="activeAreas" 
+                        recordId={activeArea.id} 
+                        disabled={isSectionDeleted('activeAreas')} 
+                      />
+                    )}
                   </div>
+                  <strong style={{ display: 'block', marginBottom: '10px' }}>Active Area {index+1}</strong>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Town</label>
@@ -7282,11 +7822,35 @@ export default function App() {
               )}
 
               {(formData.relativesOfficials||[]).map((relativesOfficial, index) => (
-                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f3f4ff', borderRadius: '8px', border: '1px solid #c5cae9' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <strong>Relatives Official {index+1}</strong>
-                    <button onClick={() => removeRelativesOfficial(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f3f4ff', borderRadius: '8px', border: '1px solid #c5cae9', position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px' }}>
+                    {/* Show X button only for new records (no id) */}
+                    {!relativesOfficial.id && (
+                      <button 
+                        onClick={() => removeRelativesOfficial(index)} 
+                        title="Remove this relatives official"
+                        style={{ 
+                          padding: '4px 8px', 
+                          backgroundColor: '#e74c3c', 
+                          color: 'white', 
+                          border: 'none', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          lineHeight: '1'
+                        }}>✕</button>
+                    )}
+                    {/* Show Delete button only for saved records (with id) */}
+                    {relativesOfficial.id && (
+                      <DeleteRecordButton 
+                        sectionName="relativesOfficials" 
+                        recordId={relativesOfficial.id} 
+                        disabled={isSectionDeleted('relativesOfficials')} 
+                      />
+                    )}
                   </div>
+                  <strong style={{ display: 'block', marginBottom: '10px' }}>Relatives Official {index+1}</strong>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Full Name <small style={{ color: '#666' }}>(Auto-fills from NIC/Passport)</small></label>
@@ -7333,11 +7897,35 @@ export default function App() {
               )}
 
               {(formData.bankDetails||[]).map((bankDetail, index) => (
-                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#fdf2f2', borderRadius: '8px', border: '1px solid #f8bbd9' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <strong>Bank Detail {index+1}</strong>
-                    <button onClick={() => removeBankDetail(index)} style={{ padding: '6px 10px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Remove</button>
+                <div key={index} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#fdf2f2', borderRadius: '8px', border: '1px solid #f8bbd9', position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px' }}>
+                    {/* Show X button only for new records (no id) */}
+                    {!bankDetail.id && (
+                      <button 
+                        onClick={() => removeBankDetail(index)} 
+                        title="Remove this bank detail"
+                        style={{ 
+                          padding: '4px 8px', 
+                          backgroundColor: '#e74c3c', 
+                          color: 'white', 
+                          border: 'none', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          lineHeight: '1'
+                        }}>✕</button>
+                    )}
+                    {/* Show Delete button only for saved records (with id) */}
+                    {bankDetail.id && (
+                      <DeleteRecordButton 
+                        sectionName="bankDetails" 
+                        recordId={bankDetail.id} 
+                        disabled={isSectionDeleted('bankDetails')} 
+                      />
+                    )}
                   </div>
+                  <strong style={{ display: 'block', marginBottom: '10px' }}>Bank Detail {index+1}</strong>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                     <div>
                       <label style={{ display: 'block', fontWeight: 'bold' }}>Account Type</label>
@@ -7657,19 +8245,16 @@ export default function App() {
               e.target.style.transform = 'translateY(0)';
             }}
           >
-            Delete "{activeSection.charAt(0).toUpperCase() + activeSection.slice(1)}" Section
+            Delete "{getSectionDisplayName(activeSection)}" Section
           </button>
         )}
-          </div>
+        </div>
         )}
       </div>
       
       {/* Duplicate Person Alert Modal */}
       <DuplicatePersonAlert />
     </div>
-    );
+  );
   }
-
-  // Default return
-  return null;
 }

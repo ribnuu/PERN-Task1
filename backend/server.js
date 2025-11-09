@@ -297,6 +297,7 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         balance: parseFloat(bankResult.rows[0].balance)
       } : null,
       family: familyResult.rows.map(member => ({
+        id: member.id,
         relation: member.relation,
         custom_relation: member.custom_relation,
         first_name: member.first_name,
@@ -306,17 +307,20 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         phone_number: member.phone_number
       })),
       vehicles: vehiclesResult.rows.map(vehicle => ({
+        id: vehicle.id,
         vehicle_number: vehicle.vehicle_number,
         make: vehicle.make,
         model: vehicle.model
       })),
       bodyMarks: bodyMarksResult.rows.map(mark => ({
+        id: mark.id,
         type: mark.type,
         location: mark.location,
         description: mark.description,
         picture: mark.picture
       })),
       usedDevices: devicesResult.rows.map(device => ({
+        id: device.id,
         device_type: device.device_type,
         make: device.make,
         model: device.model,
@@ -324,6 +328,7 @@ app.get('/api/person/:id', checkDbConnection, async (req, res) => {
         imei_number: device.imei_number
       })),
       callHistory: callHistoryResult.rows.map(call => ({
+        id: call.id,
         device: call.device,
         call_type: call.call_type,
         number: call.number,
@@ -895,7 +900,7 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
   
   try {
     const { id } = req.params;
-    const { personal, gangDetails, bank, family, vehicles, bodyMarks, usedDevices, callHistory, weapons, secondPhone, properties, socialMedia, occupations, lawyers, courtCases, activeAreas, relativesOfficials, bankDetails, corruptedOfficials, enemies } = req.body;
+    const { personal, addresses, gangDetails, bank, family, vehicles, bodyMarks, usedDevices, callHistory, weapons, secondPhone, properties, socialMedia, occupations, lawyers, courtCases, activeAreas, relativesOfficials, bankDetails, corruptedOfficials, enemies } = req.body;
     
     console.log('UPDATE request for person ID:', id);
     console.log('Personal data received:', personal);
@@ -976,6 +981,7 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     
     // Clear deleted section records for sections that are being updated with new data
     const sectionsToCheck = [
+      { data: addresses, section: 'address' },  // Added addresses section
       { data: gangDetails, section: 'gang' },
       { data: family, section: 'family' },
       { data: vehicles, section: 'vehicles' },
@@ -999,8 +1005,12 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     
     for (const { data, section } of sectionsToCheck) {
       if (data && ((Array.isArray(data) && data.length > 0) || (typeof data === 'object' && Object.keys(data).some(key => data[key])))) {
-        console.log(`Clearing deleted section record for ${section} as new data is being added`);
-        await client.query('DELETE FROM deleted_sections WHERE person_id = $1 AND section_name = $2', [id, section]);
+        console.log(`Clearing whole_section deletion marker for ${section} as new data is being added (preserving individual deletions)`);
+        // Only delete whole_section markers, keep individual_record deletions for audit trail
+        await client.query(
+          'DELETE FROM deleted_sections WHERE person_id = $1 AND section_name = $2 AND record_type = $3',
+          [id, section, 'whole_section']
+        );
       }
     }
 
@@ -1546,8 +1556,11 @@ app.put('/api/person/:id', checkDbConnection, async (req, res) => {
     if (req.body.addresses && Array.isArray(req.body.addresses)) {
       console.log('Processing addresses for person', id, ':', req.body.addresses.length, 'addresses');
       
-      // Clear deleted section record if we're adding new data to previously deleted section
-      await client.query('DELETE FROM deleted_sections WHERE person_id = $1 AND section_name = $2', [id, 'address']);
+      // Clear whole_section deletion marker if adding new addresses (preserve individual deletions for audit)
+      await client.query(
+        'DELETE FROM deleted_sections WHERE person_id = $1 AND section_name = $2 AND record_type = $3', 
+        [id, 'address', 'whole_section']
+      );
       
       // First, delete existing addresses for this person
       await client.query('DELETE FROM addresses WHERE person_id = $1', [id]);
@@ -2417,10 +2430,59 @@ app.delete('/api/person/:id/section/:sectionName', checkDbConnection, async (req
     
     // Insert or update deletion status in a separate table to track what was deleted
     console.log(`Storing deleted data for section "${sectionName}":`, JSON.stringify(deletedData, null, 2));
+    
+    // Check if there are existing deleted records for this section
+    const existingDeleted = await client.query(
+      'SELECT deleted_data FROM deleted_sections WHERE person_id = $1 AND section_name = $2',
+      [id, sectionName.toLowerCase()]
+    );
+    
+    let finalDeletedData = deletedData;
+    
+    // If there are existing deleted records, merge them with the new ones
+    if (existingDeleted.rows.length > 0 && existingDeleted.rows[0].deleted_data) {
+      try {
+        const existingData = existingDeleted.rows[0].deleted_data;
+        console.log(`📋 Found existing deleted data:`, existingData);
+        
+        // Merge the existing deleted data with the new deleted data
+        // Each section can have different structures, so merge appropriately
+        for (const key in existingData) {
+          if (Array.isArray(existingData[key]) && Array.isArray(finalDeletedData[key])) {
+            // For array types (addresses, family, etc.), concatenate the arrays
+            finalDeletedData[key] = [...existingData[key], ...finalDeletedData[key]];
+          } else if (typeof existingData[key] === 'object' && typeof finalDeletedData[key] === 'object') {
+            // For object types (enemies with individuals and gangs), merge the sub-arrays
+            finalDeletedData[key] = {
+              ...existingData[key],
+              ...finalDeletedData[key]
+            };
+            if (existingData[key].individuals && finalDeletedData[key].individuals) {
+              finalDeletedData[key].individuals = [...existingData[key].individuals, ...finalDeletedData[key].individuals];
+            }
+            if (existingData[key].gangs && finalDeletedData[key].gangs) {
+              finalDeletedData[key].gangs = [...existingData[key].gangs, ...finalDeletedData[key].gangs];
+            }
+          }
+        }
+        console.log(`✅ Merged deleted data:`, finalDeletedData);
+      } catch (mergeError) {
+        console.error(`⚠️ Error merging deleted data, using new data only:`, mergeError);
+      }
+    }
+    
+    // Delete any existing whole_section record for this person/section combination
+    // (individual records remain for audit purposes)
+    await client.query(`
+      DELETE FROM deleted_sections 
+      WHERE person_id = $1 AND section_name = $2 AND record_type = 'whole_section'
+    `, [id, sectionName.toLowerCase()]);
+    
+    // Insert the new whole_section deleted record
     await client.query(`
       INSERT INTO deleted_sections (person_id, section_name, deleted_at, deleted_data, record_type) 
       VALUES ($1, $2, CURRENT_TIMESTAMP, $3, 'whole_section')
-    `, [id, sectionName.toLowerCase(), JSON.stringify(deletedData)]);
+    `, [id, sectionName.toLowerCase(), JSON.stringify(finalDeletedData)]);
     
     await client.query('COMMIT');
     console.log(`✅ Successfully deleted section "${sectionName}" for person ID: ${id}`);
@@ -2442,6 +2504,37 @@ app.delete('/api/person/:id/section/:sectionName', checkDbConnection, async (req
     });
   } finally {
     client.release();
+  }
+});
+
+// Clear section deletion marker - allows section to be used for new entries
+// This removes the whole_section marker while keeping individual deleted records
+app.delete('/api/person/:id/section/:sectionName/clear-deletion-marker', checkDbConnection, async (req, res) => {
+  try {
+    const { id, sectionName } = req.params;
+    
+    console.log(`🔓 Clearing deletion marker for section "${sectionName}", person ID: ${id}`);
+    
+    // Delete only the whole_section record, keeping individual deleted records for audit
+    const result = await pool.query(`
+      DELETE FROM deleted_sections 
+      WHERE person_id = $1 AND section_name = $2 AND record_type = 'whole_section'
+    `, [id, sectionName.toLowerCase()]);
+    
+    console.log(`✅ Deletion marker cleared. Deleted ${result.rowCount} whole_section record(s)`);
+    
+    res.json({ 
+      success: true, 
+      message: `Deletion marker cleared for section "${sectionName}"`,
+      clearedCount: result.rowCount
+    });
+    
+  } catch (err) {
+    console.error(`❌ Failed to clear deletion marker for section "${req.params.sectionName}"`, err);
+    res.status(500).json({ 
+      error: 'Failed to clear deletion marker', 
+      details: err.message
+    });
   }
 });
 
@@ -2544,14 +2637,18 @@ app.get('/api/person/:id/section/:sectionName/deleted-records', checkDbConnectio
     
     console.log(`📍 Retrieved ${result.rows.length} deleted records for ${sectionName} section, person ${id}`);
     
-    const deletedRecords = result.rows.map(row => ({
-      data: row.detailed_data,
-      recordType: row.record_type,
-      recordIndex: row.record_index,
-      deletionReason: row.deletion_reason,
-      deletedAt: row.deleted_at
-    }));
+    // Filter out null/undefined data and ensure valid records
+    const deletedRecords = result.rows
+      .filter(row => row.detailed_data !== null && row.detailed_data !== undefined)
+      .map(row => ({
+        data: row.detailed_data,
+        recordType: row.record_type,
+        recordIndex: row.record_index,
+        deletionReason: row.deletion_reason,
+        deletedAt: row.deleted_at
+      }));
     
+    console.log(`📍 Returning ${deletedRecords.length} valid deleted records (filtered out nulls)`);
     res.json(deletedRecords);
   } catch (err) {
     console.error('Failed to get deleted records for section:', err);
@@ -2637,17 +2734,19 @@ app.get('/api/person/:id/deleted-sections', checkDbConnection, async (req, res) 
     
     console.log(`📍 Retrieved deleted sections for person ${id}:`, result.rows);
     
-    const deletedSections = result.rows.map(row => ({
-      sectionName: row.section_name,
-      deletedAt: row.deleted_at,
-      deletedData: row.deleted_data,
-      detailedData: row.detailed_data,
-      recordType: row.record_type,
-      recordIndex: row.record_index,
-      deletionReason: row.deletion_reason
-    }));
+    const deletedSections = result.rows
+      .filter(row => row.deleted_data !== null || row.detailed_data !== null) // Filter out null entries
+      .map(row => ({
+        sectionName: row.section_name,
+        deletedAt: row.deleted_at,
+        deletedData: row.deleted_data || {},  // Ensure we never send null
+        detailedData: row.detailed_data || {},
+        recordType: row.record_type,
+        recordIndex: row.record_index,
+        deletionReason: row.deletion_reason
+      }));
     
-    console.log(`📍 Formatted deleted sections:`, deletedSections);
+    console.log(`📍 Formatted deleted sections (filtered):`, deletedSections);
     res.json(deletedSections);
   } catch (err) {
     console.error('Failed to get deleted sections:', err);
